@@ -18,14 +18,26 @@
 
 ## セットアップ
 
-### 1. Firebase 側の準備
+### スマホだけで進める場合（推奨・PC不要）
+
+GitHub Actions がビルドして GitHub Pages に自動デプロイする構成になっている。
+手順は **[docs/setup-mobile.md](./docs/setup-mobile.md)** を参照。
+
+公開URL: https://aiueokakikukeko314.github.io/mario-party/
+
+`claude/new-session-fgopj0` に push するたび自動で更新されるので、
+スマホ側はページを再読み込みするだけでよい。2台での同期テストも同じURLを開くだけ。
+
+### PC で開発する場合
+
+#### 1. Firebase 側の準備
 
 1. Firebase コンソールで新規プロジェクトを作成
 2. Realtime Database を作成（ロケーション: `asia-southeast1`）、**テストモード**で開始
 3. Authentication → Sign-in method → **匿名**を有効化
 4. プロジェクト設定 → ウェブアプリの構成値をコピー
 
-### 2. 環境変数
+#### 2. 環境変数
 
 ```bash
 cp .env.local.example .env.local
@@ -34,7 +46,7 @@ cp .env.local.example .env.local
 
 `.env.local` は `.gitignore` 済み。API キーをコードに直書きしないこと。
 
-### 3. 起動
+#### 3. 起動
 
 ```bash
 npm install
@@ -59,7 +71,7 @@ npm run dev -- --host
 
 ## Phase 0 の完了条件
 
-`npm run dev` で起動し、画面に
+`npm run dev`（または公開URL）を開き、画面に
 
 - **RTDB 接続: 接続中**
 - **自分の UID: （匿名認証で払い出された uid）**
