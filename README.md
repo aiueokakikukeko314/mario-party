@@ -9,7 +9,7 @@
 | Phase | 内容 | 状態 |
 |---|---|---|
 | 0 | 雛形・Firebase 接続・型定義 | ✅ 完了 |
-| 1 | ロビー | 未着手 |
+| 1 | ロビー | 🔵 実装済み（実機2台での確認待ち） |
 | 2 | すごろく | 未着手 |
 | 3 | ミニゲーム基盤 | 未着手 |
 | 4 | ミニゲーム3本 | 未着手 |
@@ -69,22 +69,35 @@ npm run dev -- --host
 | `npm run typecheck` | `tsc --noEmit` のみ |
 | `npm run preview` | ビルド結果の確認 |
 
-## Phase 0 の完了条件
+## 動作確認
 
-`npm run dev`（または公開URL）を開き、画面に
+### Phase 0（完了）
 
-- **RTDB 接続: 接続中**
-- **自分の UID: （匿名認証で払い出された uid）**
+画面に「RTDB 接続: 接続中」と自分の UID が表示されること。
 
-が表示されること。`.env.local` が未設定の場合は、白画面ではなく設定手順のエラー画面が出る。
+### Phase 1（確認待ち）
+
+**実機2台**で行う。スマホ2台でなくても、通常タブ＋プライベートタブでも可
+（プライベートタブには別の匿名 UID が振られるため、別人として参加できる）。
+
+1. 1台目: なまえを入れて「ルームを作る」→ 4桁コードが表示される
+2. 2台目: なまえを入れて「コードで参加」→ コードを入力
+3. **両方の画面に即座に2人が表示されること**（これが Phase 1 の完了条件）
+4. 2台目のブラウザを閉じる → 1台目の一覧でその人が「切断中」になること
+5. ホスト側にだけ「ゲームを開始」ボタンがあり、2人以上で押せること
 
 ## ディレクトリ構成
 
 ```
 src/
-  lib/        firebase.ts, db.ts, time.ts, roomCode.ts
+  lib/        firebase.ts, db.ts, parse.ts, time.ts, roomCode.ts
+  logic/      lobby.ts            ← 純関数のみ（React 非依存）
+  store/      useRoom.ts          ← ルーム購読を集約（Zustand）
+  screens/    Home.tsx, Lobby.tsx, PhasePlaceholder.tsx
+  components/ PlayerCard.tsx
   types.ts    RTDB のデータモデル（CLAUDE.md セクション4）
-  App.tsx     Phase 0 の確認用画面
+  constants.ts
+  App.tsx     meta.phase を見て画面を出し分けるだけ
 ```
 
-`logic/` `store/` `screens/` `components/` `minigames/` `hooks/` は Phase 1 以降に追加する。
+`minigames/` `hooks/` と `logic/board.ts` は Phase 2 以降に追加する。
