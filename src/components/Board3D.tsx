@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { BOARD, BOARD_SIZE, type SquareType } from "../logic/board";
-import { STEP_MS } from "../hooks/useHost";
+import { STEP_MS } from "../lib/hostTiming";
 import { PLAYER_COLORS } from "./PlayerCard";
 import { TILE_SIZE, tilePos } from "./boardLayout";
 import type { Player } from "../types";

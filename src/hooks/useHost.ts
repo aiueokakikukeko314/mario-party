@@ -1,19 +1,17 @@
-import { useEffect, useRef } from "react";
-import {
-  applyDice,
-  applySquareEffect,
-  BOARD_SIZE,
-  needsStarChoice,
-  type PlayersState,
-} from "../logic/board";
+import { useEffect, useRef, useState } from "react";
 import { sortPlayers } from "../logic/lobby";
+import { pickMinigame } from "../minigames/registry";
+import { finishTurn, initBoard, setPhase, updateBoard } from "../lib/dbGame";
+import { collectScores } from "../lib/hostMinigame";
+import { handleRoll, handleStarChoice } from "../lib/hostTurn";
 import {
-  clearInput,
-  initBoard,
-  setPhase,
-  updateBoard,
-  writePlayerStats,
-} from "../lib/dbGame";
+  INTRO_MS,
+  RESULT_MS,
+  SCORE_GRACE_MS,
+  STAR_CHOICE_TIMEOUT_MS,
+  TICK_MS,
+} from "../lib/hostTiming";
+import { serverNow } from "../lib/time";
 import { selectIsHost, useRoom } from "../store/useRoom";
 import type { Room } from "../types";
 
@@ -22,24 +20,9 @@ import type { Room } from "../types";
  * 乱数（サイコロ・ワープ先）はすべてここで生成する。
  *
  * ここでの setTimeout はコマ移動アニメーションの尺合わせにのみ使う。
- * ミニゲームの同時開始は Phase 3 で startAt の絶対時刻で行う（セクション6）。
+ * ミニゲームの同時開始は startAt という絶対時刻で行う（セクション6）。
  */
 
-/** 1マス進むのにかける時間(ms)。Board3D 側の演出と揃える。 */
-export const STEP_MS = 260;
-/** 移動しきってからマス効果を出すまでの間 */
-const LAND_PAUSE_MS = 350;
-/** マス効果を見せてから次の人に渡すまでの間 */
-const EFFECT_PAUSE_MS = 900;
-/** star の購入確認に返事が来ないときに「やめる」とみなすまでの時間 */
-const STAR_CHOICE_TIMEOUT_MS = 15000;
-
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/** 1〜6 の出目。ホストだけが呼ぶ。 */
-function rollDice(): number {
-  return 1 + Math.floor(Math.random() * 6);
-}
 
 export function useHost(): void {
   const room = useRoom((s) => s.room);
@@ -56,6 +39,18 @@ export function useHost(): void {
   // タイマー発火時に最新の room を見るための箱
   const roomRef = useRef<Room | null>(room);
   roomRef.current = room;
+
+  // ミニゲーム系のフェーズは「時刻」で進むため、room の更新が無くても再評価する
+  const [tick, setTick] = useState(0);
+  const phase = room?.meta.phase ?? null;
+  useEffect(() => {
+    if (!isHost) return;
+    if (phase !== "minigameIntro" && phase !== "minigame" && phase !== "minigameResult") {
+      return;
+    }
+    const id = setInterval(() => setTick((value) => value + 1), TICK_MS);
+    return () => clearInterval(id);
+  }, [isHost, phase]);
 
   useEffect(() => {
     return () => {
@@ -90,6 +85,50 @@ export function useHost(): void {
       const first = ordered[0];
       if (!first) return;
       run(initBoard(roomCode, first.uid));
+      return;
+    }
+
+    // --- ミニゲーム: 選出と同時開始の予約 ---
+    if (room.meta.phase === "minigameIntro") {
+      if (!room.minigame?.id) {
+        const game = pickMinigame(Math.random());
+        if (!game) return;
+        const startAt = serverNow() + INTRO_MS;
+        run(
+          startMinigame(roomCode, game.id, startAt, startAt + game.durationMs),
+        );
+      } else if (serverNow() >= (room.minigame.startAt ?? Infinity)) {
+        run(setPhase(roomCode, "minigame"));
+      }
+      return;
+    }
+
+    // --- ミニゲーム: スコア収集と締め切り ---
+    if (room.meta.phase === "minigame") {
+      run(collectScores(roomCode, room, ordered));
+      return;
+    }
+
+    // --- 結果表示が終わったら次のターンへ ---
+    if (room.meta.phase === "minigameResult") {
+      const scores = room.minigame?.scores;
+      const allScored = ordered.every(
+        (entry) => typeof scores?.[entry.uid] === "number",
+      );
+      // 全員そろって終わったなら猶予は要らない
+      const base =
+        (room.minigame?.endAt ?? 0) + (allScored ? 0 : SCORE_GRACE_MS);
+      if (serverNow() < base + RESULT_MS) return;
+      const first = ordered[0];
+      if (!first) return;
+      run(
+        finishTurn(
+          roomCode,
+          room.board?.turn ?? 1,
+          room.meta.maxTurns,
+          first.uid,
+        ),
+      );
       return;
     }
 
@@ -135,95 +174,5 @@ export function useHost(): void {
     // --- 手番プレイヤーの「振る」入力を処理する ---
     if (room.inputs?.[board.currentUid]?.type !== "roll") return;
     run(handleRoll(roomCode, room, board.currentUid));
-  }, [isHost, roomCode, room]);
-}
-
-/** サイコロを振ってコマを進め、マス効果まで処理する。 */
-async function handleRoll(
-  roomCode: string,
-  room: Room,
-  uid: string,
-): Promise<void> {
-  const players = room.players ?? {};
-  if (!room.board) return;
-
-  // 同じ入力を二度処理しないよう、先に消す
-  await clearInput(roomCode, uid);
-
-  const dice = rollDice();
-  const moved = applyDice(players, uid, dice);
-  const movedPlayer = moved[uid];
-  if (!movedPlayer) return;
-
-  // 出目を見せ、コマを進める（各端末が pos の変化をアニメーションする）
-  await updateBoard(roomCode, { dice, animating: true });
-  await writePlayerStats(roomCode, uid, {
-    coins: movedPlayer.coins,
-    stars: movedPlayer.stars,
-    pos: movedPlayer.pos,
-  });
-
-  await wait(dice * STEP_MS + LAND_PAUSE_MS);
-
-  // star マスは本人に買うかどうか聞く。返事は inputs 経由で戻ってくる
-  if (needsStarChoice(moved, uid)) {
-    await updateBoard(roomCode, { animating: false, pending: "star" });
-    return;
-  }
-
-  // warp の移動先もホストが決める
-  const warpTarget = Math.floor(Math.random() * BOARD_SIZE);
-  await applyEffectAndAdvance(roomCode, moved, uid, {
-    warpTarget,
-    buyStar: false,
-  });
-}
-
-/** 本人が選んだ「買う / やめる」を反映して手番を進める。 */
-async function handleStarChoice(
-  roomCode: string,
-  room: Room,
-  uid: string,
-  buyStar: boolean,
-): Promise<void> {
-  await clearInput(roomCode, uid);
-  await updateBoard(roomCode, { pending: null });
-  await applyEffectAndAdvance(roomCode, room.players ?? {}, uid, {
-    warpTarget: 0, // star マスなので使われない
-    buyStar,
-  });
-}
-
-async function applyEffectAndAdvance(
-  roomCode: string,
-  players: PlayersState,
-  uid: string,
-  ctx: { warpTarget: number; buyStar: boolean },
-): Promise<void> {
-  const { players: after } = applySquareEffect(players, uid, ctx);
-  const afterPlayer = after[uid];
-  if (afterPlayer) {
-    await writePlayerStats(roomCode, uid, {
-      coins: afterPlayer.coins,
-      stars: afterPlayer.stars,
-      pos: afterPlayer.pos,
-    });
-  }
-
-  await wait(EFFECT_PAUSE_MS);
-
-  // 次の人へ。全員振り終わっていたらミニゲームへ
-  const ordered = sortPlayers(players);
-  const currentIndex = ordered.findIndex((entry) => entry.uid === uid);
-  const next = ordered[currentIndex + 1];
-  if (next) {
-    await updateBoard(roomCode, {
-      currentUid: next.uid,
-      dice: null,
-      animating: false,
-    });
-  } else {
-    await updateBoard(roomCode, { animating: false });
-    await setPhase(roomCode, "minigameIntro");
-  }
+  }, [isHost, roomCode, room, tick]);
 }

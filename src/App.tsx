@@ -5,6 +5,8 @@ import { startTimeSync } from "./lib/time";
 import { useRoom } from "./store/useRoom";
 import Home from "./screens/Home";
 import Lobby from "./screens/Lobby";
+import Minigame from "./screens/Minigame";
+import MinigameResult from "./screens/MinigameResult";
 import Board from "./screens/Board";
 import PhasePlaceholder from "./screens/PhasePlaceholder";
 import { useHost } from "./hooks/useHost";
@@ -94,6 +96,17 @@ export default function App() {
     }
     if (room.meta.phase === "lobby") {
       return <Lobby />;
+    }
+    // イントロとプレイは同じコンポーネントで受ける。
+    // 差し替えるとアンマウントされ、連打数などのローカル状態が消えるため。
+    if (
+      room.meta.phase === "minigameIntro" ||
+      room.meta.phase === "minigame"
+    ) {
+      return <Minigame />;
+    }
+    if (room.meta.phase === "minigameResult") {
+      return <MinigameResult />;
     }
     if (room.meta.phase === "board") {
       return <Board />;

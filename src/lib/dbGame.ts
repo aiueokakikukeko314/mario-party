@@ -1,6 +1,6 @@
 import { ref, remove, serverTimestamp, set, update } from "firebase/database";
 import { db } from "./firebase";
-import type { BoardState, Phase, Player } from "../types";
+import type { BoardState, MinigameState, Phase, Player } from "../types";
 
 /**
  * ボード進行に関する RTDB 書き込み（CLAUDE.md セクション10 の lib 層）。
@@ -75,6 +75,43 @@ export async function setPhase(
 }
 
 /**
+ * 【ホスト】ミニゲームを開始する。
+ * startAt / endAt は **サーバー時刻の絶対値**（CLAUDE.md セクション6）。
+ * 各端末はこの絶対時刻を基準に同時に開始する。
+ */
+export async function startMinigame(
+  roomCode: string,
+  id: string,
+  startAt: number,
+  endAt: number,
+): Promise<void> {
+  const minigame: MinigameState = {
+    id,
+    startAt,
+    endAt,
+    ranking: null,
+  };
+  await set(ref(db, `${roomPath(roomCode)}/minigame`), minigame);
+}
+
+/** 【ホスト】受け取ったスコアを集計場所に書く。 */
+export async function writeScore(
+  roomCode: string,
+  uid: string,
+  score: number,
+): Promise<void> {
+  await set(ref(db, `${roomPath(roomCode)}/minigame/scores/${uid}`), score);
+}
+
+/** 【ホスト】確定した順位を書く。 */
+export async function writeRanking(
+  roomCode: string,
+  ranking: string[],
+): Promise<void> {
+  await update(ref(db, `${roomPath(roomCode)}/minigame`), { ranking });
+}
+
+/**
  * 【ホスト】ミニゲームが終わったあとの後始末。
  * 最終ターンなら gameEnd、そうでなければ次のターンのボードへ。
  */
@@ -84,6 +121,9 @@ export async function finishTurn(
   maxTurns: number,
   firstUid: string,
 ): Promise<void> {
+  // 次のターンに前回のスコアが残らないよう消す
+  await remove(ref(db, `${roomPath(roomCode)}/minigame`));
+
   if (currentTurn >= maxTurns) {
     await setPhase(roomCode, "gameEnd");
     return;
