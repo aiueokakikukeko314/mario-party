@@ -5,7 +5,9 @@ import { startTimeSync } from "./lib/time";
 import { useRoom } from "./store/useRoom";
 import Home from "./screens/Home";
 import Lobby from "./screens/Lobby";
+import Board from "./screens/Board";
 import PhasePlaceholder from "./screens/PhasePlaceholder";
+import { useHost } from "./hooks/useHost";
 
 /**
  * 画面の出し分けだけを行う（CLAUDE.md セクション5）。
@@ -21,6 +23,9 @@ export default function App() {
 
   const [authError, setAuthError] = useState<string | null>(null);
   const [connected, setConnected] = useState(true);
+
+  // ホスト端末だけがゲームロジックを回す（内部で isHost をガードしている）
+  useHost();
 
   useEffect(() => {
     startTimeSync();
@@ -89,6 +94,9 @@ export default function App() {
     }
     if (room.meta.phase === "lobby") {
       return <Lobby />;
+    }
+    if (room.meta.phase === "board") {
+      return <Board />;
     }
     return <PhasePlaceholder phase={room.meta.phase} />;
   }

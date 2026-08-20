@@ -9,8 +9,8 @@
 | Phase | 内容 | 状態 |
 |---|---|---|
 | 0 | 雛形・Firebase 接続・型定義 | ✅ 完了 |
-| 1 | ロビー | 🔵 実装済み（実機2台での確認待ち） |
-| 2 | すごろく | 未着手 |
+| 1 | ロビー | ✅ 完了 |
+| 2 | すごろく | 🔵 実装済み（実機2台での確認待ち） |
 | 3 | ミニゲーム基盤 | 未着手 |
 | 4 | ミニゲーム3本 | 未着手 |
 | 5 | 演出・音・PWA | 未着手 |
@@ -75,29 +75,43 @@ npm run dev -- --host
 
 画面に「RTDB 接続: 接続中」と自分の UID が表示されること。
 
-### Phase 1（確認待ち）
+### Phase 1（完了）
 
-**実機2台**で行う。スマホ2台でなくても、通常タブ＋プライベートタブでも可
-（プライベートタブには別の匿名 UID が振られるため、別人として参加できる）。
+実機2台でルームコード入室し、参加者リストが両方に即反映されることを確認済み。
 
-1. 1台目: なまえを入れて「ルームを作る」→ 4桁コードが表示される
-2. 2台目: なまえを入れて「コードで参加」→ コードを入力
-3. **両方の画面に即座に2人が表示されること**（これが Phase 1 の完了条件）
-4. 2台目のブラウザを閉じる → 1台目の一覧でその人が「切断中」になること
-5. ホスト側にだけ「ゲームを開始」ボタンがあり、2人以上で押せること
+### Phase 2（確認待ち）
+
+**実機2台**で行う。
+
+1. ロビーで「ゲームを開始」→ 両方の画面が3Dボードに変わる
+2. 手番の人だけ「サイコロを振る」が押せる。他は「〇〇のばん」と出る
+3. **両方の端末で同じ出目・同じ移動先になること**
+4. コイン/スターが上部のバーで両方の端末に同期すること
+5. 全員が振り終わると `minigameIntro` の仮画面へ。ホストの「（仮）ミニゲームを飛ばして次のターンへ」で次ターンに戻る
+6. ボードをドラッグして視点が回せること
+
+## テスト
+
+```bash
+npm test          # src/logic の純関数のユニットテスト（Vitest）
+npm run typecheck # tsc --noEmit
+npm run build     # 型チェック + 本番ビルド
+```
 
 ## ディレクトリ構成
 
 ```
 src/
-  lib/        firebase.ts, db.ts, parse.ts, time.ts, roomCode.ts
-  logic/      lobby.ts            ← 純関数のみ（React 非依存）
+  lib/        firebase.ts, db.ts, dbGame.ts, parse.ts, time.ts, roomCode.ts
+  logic/      board.ts, board.test.ts, lobby.ts  ← 純関数のみ（React 非依存）
   store/      useRoom.ts          ← ルーム購読を集約（Zustand）
-  screens/    Home.tsx, Lobby.tsx, PhasePlaceholder.tsx
-  components/ PlayerCard.tsx
+  hooks/      useHost.ts          ← ホストだけが回すゲームロジック
+  screens/    Home.tsx, Lobby.tsx, Board.tsx, PhasePlaceholder.tsx
+  components/ PlayerCard.tsx, Board3D.tsx, boardLayout.ts, Dice.tsx,
+              PlayerStatusBar.tsx
   types.ts    RTDB のデータモデル（CLAUDE.md セクション4）
   constants.ts
   App.tsx     meta.phase を見て画面を出し分けるだけ
 ```
 
-`minigames/` `hooks/` と `logic/board.ts` は Phase 2 以降に追加する。
+`minigames/` は Phase 3 以降に追加する。
