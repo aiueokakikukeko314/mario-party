@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+/* モバイル基本設定（CLAUDE.md セクション11）。画面ごとの実装は Phase 1 以降。 */
+html,
+body,
+#root {
+  height: 100dvh; /* 100vh は iOS でアドレスバー分ズレる */
+}
+
+body {
+  margin: 0;
+  background-color: #0f172a;
+  color: #e2e8f0;
+  font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", sans-serif;
+  touch-action: manipulation; /* ダブルタップズーム防止 */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-text-size-adjust: 100%;
+}

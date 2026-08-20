@@ -1,0 +1,31 @@
+# 依存
+node_modules
+
+# ビルド成果物
+dist
+dist-ssr
+*.local
+
+# 環境変数（Firebase の構成値。コードに直書きしない）
+.env
+.env.local
+.env.*.local
+
+# エディタ / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ログ
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
