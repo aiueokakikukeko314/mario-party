@@ -97,6 +97,7 @@ function parseBoard(value: unknown): BoardState | null {
     currentUid,
     dice: asNumber(value["dice"]),
     animating: value["animating"] === true,
+    pending: value["pending"] === "star" ? "star" : null,
   };
 }
 

@@ -52,6 +52,7 @@ export async function initBoard(
     currentUid,
     dice: null,
     animating: false,
+    pending: null,
   };
   await set(ref(db, `${roomPath(roomCode)}/board`), board);
 }
@@ -92,6 +93,7 @@ export async function finishTurn(
     currentUid: firstUid,
     dice: null,
     animating: false,
+    pending: null,
   };
   await set(ref(db, `${roomPath(roomCode)}/board`), board);
   await setPhase(roomCode, "board");

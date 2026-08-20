@@ -6,10 +6,12 @@ import {
   BOARD_SIZE,
   COIN_DELTA,
   hasMinigameBonus,
+  needsStarChoice,
   squareAt,
   STAR_COST,
   stepPath,
   type PlayersState,
+  type SquareContext,
 } from "./board";
 import type { Player } from "../types";
 
@@ -25,6 +27,11 @@ function player(overrides: Partial<Player> = {}): Player {
     lastSeen: 0,
     ...overrides,
   };
+}
+
+/** applySquareEffect に渡す判断材料。既定は「ワープ先0・スターは買わない」。 */
+function ctx(overrides: Partial<SquareContext> = {}): SquareContext {
+  return { warpTarget: 0, buyStar: false, ...overrides };
 }
 
 /** 指定の種類のマスの位置を1つ返す。 */
@@ -78,7 +85,7 @@ describe("applyDice", () => {
 describe("applySquareEffect", () => {
   it("plus は +3 コイン", () => {
     const state: PlayersState = { me: player({ pos: posOf("plus"), coins: 5 }) };
-    const { players, result } = applySquareEffect(state, "me", 0);
+    const { players, result } = applySquareEffect(state, "me", ctx());
     expect(players["me"]?.coins).toBe(5 + COIN_DELTA);
     expect(result.coinDelta).toBe(COIN_DELTA);
   });
@@ -87,53 +94,62 @@ describe("applySquareEffect", () => {
     const state: PlayersState = {
       me: player({ pos: posOf("minus"), coins: 10 }),
     };
-    expect(applySquareEffect(state, "me", 0).players["me"]?.coins).toBe(7);
+    expect(applySquareEffect(state, "me", ctx()).players["me"]?.coins).toBe(7);
   });
 
   it("minus でコインは0未満にならない", () => {
     const state: PlayersState = {
       me: player({ pos: posOf("minus"), coins: 1 }),
     };
-    const { players, result } = applySquareEffect(state, "me", 0);
+    const { players, result } = applySquareEffect(state, "me", ctx());
     expect(players["me"]?.coins).toBe(0);
     expect(result.coinDelta).toBe(-1);
   });
 
-  it("star はコイン20枚でスター1つ", () => {
+  it("star は「買う」を選ぶとコイン20枚でスター1つ", () => {
     const state: PlayersState = {
       me: player({ pos: posOf("star"), coins: 25, stars: 1 }),
     };
-    const { players } = applySquareEffect(state, "me", 0);
+    const { players } = applySquareEffect(state, "me", ctx({ buyStar: true }));
     expect(players["me"]?.coins).toBe(25 - STAR_COST);
     expect(players["me"]?.stars).toBe(2);
   });
 
-  it("star はコインが足りなければ何も起きない", () => {
+  it("star で「やめる」を選ぶと何も起きない", () => {
+    const state: PlayersState = {
+      me: player({ pos: posOf("star"), coins: 25, stars: 1 }),
+    };
+    const { players } = applySquareEffect(state, "me", ctx({ buyStar: false }));
+    expect(players["me"]?.coins).toBe(25);
+    expect(players["me"]?.stars).toBe(1);
+  });
+
+  it("star は「買う」でもコインが足りなければ購入しない", () => {
     const state: PlayersState = {
       me: player({ pos: posOf("star"), coins: 19, stars: 0 }),
     };
-    const { players } = applySquareEffect(state, "me", 0);
+    const { players } = applySquareEffect(state, "me", ctx({ buyStar: true }));
     expect(players["me"]?.coins).toBe(19);
     expect(players["me"]?.stars).toBe(0);
   });
 
   it("warp はホストが渡した位置へ移動する", () => {
     const state: PlayersState = { me: player({ pos: posOf("warp") }) };
-    const { players, result } = applySquareEffect(state, "me", 7);
+    const { players, result } = applySquareEffect(state, "me", ctx({ warpTarget: 7 }));
     expect(players["me"]?.pos).toBe(7);
     expect(result.movedTo).toBe(7);
   });
 
   it("warp の移動先もリング状に丸める", () => {
     const state: PlayersState = { me: player({ pos: posOf("warp") }) };
-    expect(applySquareEffect(state, "me", BOARD_SIZE + 2).players["me"]?.pos).toBe(2);
+    expect(applySquareEffect(state, "me", ctx({ warpTarget: BOARD_SIZE + 2 })).players["me"]?.pos).toBe(2);
   });
 
   it("minigame マスはこの時点では増減なし", () => {
     const state: PlayersState = {
       me: player({ pos: posOf("minigame"), coins: 5 }),
     };
-    const { players, result } = applySquareEffect(state, "me", 0);
+    const { players, result } = applySquareEffect(state, "me", ctx());
     expect(players["me"]?.coins).toBe(5);
     expect(result.coinDelta).toBe(0);
     expect(result.type).toBe("minigame");
@@ -143,7 +159,7 @@ describe("applySquareEffect", () => {
     const state: PlayersState = {
       me: player({ pos: posOf("empty"), coins: 5, stars: 1 }),
     };
-    const { players } = applySquareEffect(state, "me", 0);
+    const { players } = applySquareEffect(state, "me", ctx());
     expect(players["me"]?.coins).toBe(5);
     expect(players["me"]?.stars).toBe(1);
   });
@@ -153,7 +169,30 @@ describe("applySquareEffect", () => {
       me: player({ pos: posOf("plus"), coins: 0 }),
       other: player({ coins: 99 }),
     };
-    expect(applySquareEffect(state, "me", 0).players["other"]?.coins).toBe(99);
+    expect(applySquareEffect(state, "me", ctx()).players["other"]?.coins).toBe(99);
+  });
+});
+
+describe("needsStarChoice", () => {
+  it("star マスでコインが足りれば確認が要る", () => {
+    const state: PlayersState = {
+      me: player({ pos: posOf("star"), coins: STAR_COST }),
+    };
+    expect(needsStarChoice(state, "me")).toBe(true);
+  });
+
+  it("star マスでもコインが足りなければ確認しない", () => {
+    const state: PlayersState = {
+      me: player({ pos: posOf("star"), coins: STAR_COST - 1 }),
+    };
+    expect(needsStarChoice(state, "me")).toBe(false);
+  });
+
+  it("star 以外のマスでは確認しない", () => {
+    const state: PlayersState = {
+      me: player({ pos: posOf("plus"), coins: 99 }),
+    };
+    expect(needsStarChoice(state, "me")).toBe(false);
   });
 });
 

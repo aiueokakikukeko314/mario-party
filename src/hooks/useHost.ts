@@ -1,5 +1,11 @@
 import { useEffect, useRef } from "react";
-import { applyDice, applySquareEffect, BOARD_SIZE } from "../logic/board";
+import {
+  applyDice,
+  applySquareEffect,
+  BOARD_SIZE,
+  needsStarChoice,
+  type PlayersState,
+} from "../logic/board";
 import { sortPlayers } from "../logic/lobby";
 import {
   clearInput,
@@ -25,6 +31,8 @@ export const STEP_MS = 260;
 const LAND_PAUSE_MS = 350;
 /** マス効果を見せてから次の人に渡すまでの間 */
 const EFFECT_PAUSE_MS = 900;
+/** star の購入確認に返事が来ないときに「やめる」とみなすまでの時間 */
+const STAR_CHOICE_TIMEOUT_MS = 15000;
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -43,11 +51,26 @@ export function useHost(): void {
   const busyRef = useRef(false);
   // 起動直後に一度だけ animating の取り残しを掃除したか
   const recoveredRef = useRef(false);
-  // 常に最新の room を参照するための箱
+  // star の返事待ちの保険タイマー
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // タイマー発火時に最新の room を見るための箱
   const roomRef = useRef<Room | null>(room);
   roomRef.current = room;
 
   useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const clearTimer = () => {
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+
     if (!isHost || roomCode === null || room === null) return;
     if (busyRef.current) return;
 
@@ -55,56 +78,74 @@ export function useHost(): void {
     const ordered = sortPlayers(players);
     if (ordered.length === 0) return;
 
+    const run = (task: Promise<void>) => {
+      busyRef.current = true;
+      void task.finally(() => {
+        busyRef.current = false;
+      });
+    };
+
     // --- ボード未初期化なら作る ---
     if (room.meta.phase === "board" && room.board === undefined) {
       const first = ordered[0];
       if (!first) return;
-      busyRef.current = true;
-      void initBoard(roomCode, first.uid).finally(() => {
-        busyRef.current = false;
-      });
+      run(initBoard(roomCode, first.uid));
       return;
     }
 
     if (room.meta.phase !== "board" || room.board === undefined) return;
     const board = room.board;
 
-    // animating を立てられるのはホストだけなので、ホストが起動した直後に
-    // true のままなら前のホストが移動中に落ちた残骸。ここで解除しないと進行が止まる。
+    // animating を立てられるのはホストだけなので、ホスト起動直後に true のままなら
+    // 前のホストが移動中に落ちた残骸。解除しないと進行が止まる。
     if (board.animating && !recoveredRef.current) {
       recoveredRef.current = true;
-      busyRef.current = true;
-      void updateBoard(roomCode, { animating: false }).finally(() => {
-        busyRef.current = false;
-      });
+      run(updateBoard(roomCode, { animating: false }));
       return;
     }
     recoveredRef.current = true;
+
+    // --- star マスの購入確認待ち ---
+    if (board.pending === "star") {
+      const choice = room.inputs?.[board.currentUid];
+      if (choice?.type === "starChoice") {
+        clearTimer();
+        run(
+          handleStarChoice(roomCode, room, board.currentUid, choice.value === true),
+        );
+        return;
+      }
+      // 返事が来ないまま固まらないよう保険をかける（切断など）
+      if (timerRef.current === null) {
+        timerRef.current = setTimeout(() => {
+          timerRef.current = null;
+          const latest = roomRef.current;
+          if (latest?.board?.pending !== "star") return;
+          run(
+            handleStarChoice(roomCode, latest, latest.board.currentUid, false),
+          );
+        }, STAR_CHOICE_TIMEOUT_MS);
+      }
+      return;
+    }
+    clearTimer();
+
     if (board.animating) return;
 
     // --- 手番プレイヤーの「振る」入力を処理する ---
-    const input = room.inputs?.[board.currentUid];
-    if (input?.type !== "roll") return;
-
-    busyRef.current = true;
-    void (async () => {
-      try {
-        await handleRoll(roomCode, room, board.currentUid);
-      } finally {
-        busyRef.current = false;
-      }
-    })();
+    if (room.inputs?.[board.currentUid]?.type !== "roll") return;
+    run(handleRoll(roomCode, room, board.currentUid));
   }, [isHost, roomCode, room]);
 }
 
+/** サイコロを振ってコマを進め、マス効果まで処理する。 */
 async function handleRoll(
   roomCode: string,
   room: Room,
   uid: string,
 ): Promise<void> {
   const players = room.players ?? {};
-  const board = room.board;
-  if (!board) return;
+  if (!room.board) return;
 
   // 同じ入力を二度処理しないよう、先に消す
   await clearInput(roomCode, uid);
@@ -124,9 +165,42 @@ async function handleRoll(
 
   await wait(dice * STEP_MS + LAND_PAUSE_MS);
 
-  // 止まったマスの効果。warp の移動先もホストが決める
+  // star マスは本人に買うかどうか聞く。返事は inputs 経由で戻ってくる
+  if (needsStarChoice(moved, uid)) {
+    await updateBoard(roomCode, { animating: false, pending: "star" });
+    return;
+  }
+
+  // warp の移動先もホストが決める
   const warpTarget = Math.floor(Math.random() * BOARD_SIZE);
-  const { players: after } = applySquareEffect(moved, uid, warpTarget);
+  await applyEffectAndAdvance(roomCode, moved, uid, {
+    warpTarget,
+    buyStar: false,
+  });
+}
+
+/** 本人が選んだ「買う / やめる」を反映して手番を進める。 */
+async function handleStarChoice(
+  roomCode: string,
+  room: Room,
+  uid: string,
+  buyStar: boolean,
+): Promise<void> {
+  await clearInput(roomCode, uid);
+  await updateBoard(roomCode, { pending: null });
+  await applyEffectAndAdvance(roomCode, room.players ?? {}, uid, {
+    warpTarget: 0, // star マスなので使われない
+    buyStar,
+  });
+}
+
+async function applyEffectAndAdvance(
+  roomCode: string,
+  players: PlayersState,
+  uid: string,
+  ctx: { warpTarget: number; buyStar: boolean },
+): Promise<void> {
+  const { players: after } = applySquareEffect(players, uid, ctx);
   const afterPlayer = after[uid];
   if (afterPlayer) {
     await writePlayerStats(roomCode, uid, {

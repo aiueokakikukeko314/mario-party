@@ -54,6 +54,11 @@ export interface BoardState {
   dice: number | null;
   /** コマ移動アニメーション中はホストが true にする。 */
   animating: boolean;
+  /**
+   * 手番プレイヤーの選択待ち。
+   * star マスで「買う/やめる」を確認している間だけ "star"。それ以外は null。
+   */
+  pending: "star" | null;
 }
 
 /** rooms/{roomCode}/minigame */

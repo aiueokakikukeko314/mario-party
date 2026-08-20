@@ -78,6 +78,7 @@ rooms/{roomCode}/
     currentUid: string       # 今の手番プレイヤー
     dice: number | null      # 出目（表示用）
     animating: boolean
+    pending: "star" | null   # 手番プレイヤーの選択待ち（star マスの購入確認）
   minigame:
     id: string | null
     startAt: number | null   # サーバー時刻の絶対値(ms)
@@ -168,7 +169,7 @@ export interface MinigameProps {
 type SquareType = "plus" | "minus" | "star" | "minigame" | "warp" | "empty";
 ```
 - `plus`: +3コイン / `minus`: −3コイン（0未満にはしない）
-- `star`: コイン20枚を支払ってスター1つ購入
+- `star`: コイン20枚を支払ってスター1つ購入。**買うかどうかは本人に確認する**（20枚未満なら確認せず素通り）
 - `warp`: ランダムなマスへ移動（ホストが乱数決定）
 - `minigame`: そのターンのミニゲーム報酬が2倍（1位 +20 / 2位 +10 / 3位 +4 / 4位 0）
 - `empty`: 何も起きない

@@ -4,6 +4,7 @@ import Dice from "../components/Dice";
 import PlayerStatusBar from "../components/PlayerStatusBar";
 import { sendInput } from "../lib/dbGame";
 import { selectPlayers, useRoom } from "../store/useRoom";
+import { STAR_COST } from "../logic/board";
 
 /**
  * すごろく画面。
@@ -27,7 +28,8 @@ export default function Board() {
   }, [currentUid, board?.turn]);
 
   const myTurn = currentUid !== null && currentUid === myUid;
-  const canRoll = myTurn && board?.animating === false && !sent;
+  const awaitingStar = board?.pending === "star";
+  const canRoll = myTurn && !awaitingStar && board?.animating === false && !sent;
 
   async function roll(): Promise<void> {
     if (roomCode === null || myUid === null) return;
@@ -35,11 +37,48 @@ export default function Board() {
     await sendInput(roomCode, myUid, "roll");
   }
 
+  async function chooseStar(buy: boolean): Promise<void> {
+    if (roomCode === null || myUid === null) return;
+    await sendInput(roomCode, myUid, "starChoice", buy);
+  }
+
   return (
     <main className="flex h-full flex-col">
       <PlayerStatusBar players={players} currentUid={currentUid} />
 
       <Board3D players={players} currentUid={currentUid} />
+
+      {awaitingStar && (
+        <div className="shrink-0 px-6 pt-2">
+          {myTurn ? (
+            <div className="rounded-xl bg-amber-400/10 p-3 ring-1 ring-amber-400/40">
+              <p className="text-center text-sm text-amber-200">
+                ★のマスに とまりました。コイン {STAR_COST} 枚で スターを買いますか？
+              </p>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => void chooseStar(true)}
+                  className="min-h-14 flex-1 rounded-xl bg-amber-400 text-base font-bold text-amber-950"
+                >
+                  買う
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void chooseStar(false)}
+                  className="min-h-14 flex-1 rounded-xl bg-slate-700 text-base font-bold"
+                >
+                  やめる
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="rounded-xl bg-slate-800 py-3 text-center text-sm text-slate-300">
+              {current?.player.name ?? "だれか"} が スターを買うか えらんでいます…
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="flex shrink-0 items-center gap-4 px-6 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
         <Dice value={board?.dice ?? null} rolling={board?.animating === true} />
@@ -60,9 +99,11 @@ export default function Board() {
             <p className="mt-1 flex min-h-14 items-center justify-center rounded-xl bg-slate-800 text-sm text-slate-300">
               {board?.animating === true
                 ? "うごいています…"
-                : myTurn
-                  ? "まっています…"
-                  : `${current?.player.name ?? "だれか"} のばん`}
+                : awaitingStar
+                  ? "★ をどうするか えらんでいます"
+                  : myTurn
+                    ? "まっています…"
+                    : `${current?.player.name ?? "だれか"} のばん`}
             </p>
           )}
         </div>

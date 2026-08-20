@@ -80,6 +80,24 @@ export function applyDice(
   };
 }
 
+/**
+ * star マスで本人に購入確認を出す必要があるか。
+ * コインが足りなければ確認せずに素通りする。
+ */
+export function needsStarChoice(players: PlayersState, uid: string): boolean {
+  const player = players[uid];
+  if (!player) return false;
+  return squareAt(player.pos) === "star" && player.coins >= STAR_COST;
+}
+
+/** マス効果の適用に必要な、ロジック外から与えられる判断材料。 */
+export interface SquareContext {
+  /** warp の移動先。ホストが乱数で決める（CLAUDE.md セクション3）。 */
+  warpTarget: number;
+  /** star マスでスターを買うか。本人が選ぶ。 */
+  buyStar: boolean;
+}
+
 /** マス効果の結果。演出とログの表示に使う。 */
 export interface SquareResult {
   type: SquareType;
@@ -91,12 +109,12 @@ export interface SquareResult {
 
 /**
  * 止まったマスの効果を適用する。
- * warp の移動先はホストが乱数で決めて warpTarget として渡す。
+ * 乱数（warp の移動先）と本人の選択（star を買うか）は ctx で受け取る。
  */
 export function applySquareEffect(
   players: PlayersState,
   uid: string,
-  warpTarget: number,
+  ctx: SquareContext,
 ): { players: PlayersState; result: SquareResult } {
   const player = players[uid];
   if (!player) {
@@ -120,14 +138,14 @@ export function applySquareEffect(
       coinDelta = -Math.min(COIN_DELTA, player.coins);
       break;
     case "star":
-      // 20枚払えるときだけ購入する
-      if (player.coins >= STAR_COST) {
+      // 本人が「買う」を選び、かつ20枚払えるときだけ購入する
+      if (ctx.buyStar && player.coins >= STAR_COST) {
         coinDelta = -STAR_COST;
         starDelta = 1;
       }
       break;
     case "warp":
-      movedTo = ((warpTarget % BOARD_SIZE) + BOARD_SIZE) % BOARD_SIZE;
+      movedTo = ((ctx.warpTarget % BOARD_SIZE) + BOARD_SIZE) % BOARD_SIZE;
       break;
     case "minigame":
     case "empty":
