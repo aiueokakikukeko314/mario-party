@@ -11,10 +11,19 @@
             ".write": "auth != null && (data.val() === auth.uid || (newData.val() === auth.uid && data.parent().parent().child('players').child(data.val()).child('connected').val() !== true && data.parent().parent().child('players').child(auth.uid).child('connected').val() === true))",
             ".validate": "newData.isString()"
           },
-          "phase": {
-            ".validate": "newData.val() === 'lobby' || newData.val() === 'board' || newData.val() === 'minigameIntro' || newData.val() === 'minigame' || newData.val() === 'minigameResult' || newData.val() === 'gameEnd'"
+          "hostEpoch": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && (!data.exists() || newData.val() >= data.val())"
           },
-          "maxTurns": { ".validate": "newData.isNumber() && newData.val() > 0" }
+          "phase": {
+            ".validate": "newData.val() === 'lobby' || newData.val() === 'gameSetup' || newData.val() === 'board' || newData.val() === 'minigameIntro' || newData.val() === 'minigame' || newData.val() === 'minigameResult' || newData.val() === 'finalBonus' || newData.val() === 'gameEnd'"
+          }
+        },
+
+        "config": {
+          ".write": "auth != null && data.parent().child('meta/hostId').val() === auth.uid",
+          "maxTurns": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 50" },
+          "startingCoins": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 999" },
+          "boardId": { ".validate": "newData.isString() && newData.val().length <= 40" }
         },
 
         "board": {
@@ -25,13 +34,26 @@
           ".write": "auth != null && data.parent().child('meta/hostId').val() === auth.uid"
         },
 
+        "bonus": {
+          ".write": "auth != null && data.parent().child('meta/hostId').val() === auth.uid"
+        },
+
         "players": {
           "$uid": {
             ".write": "auth != null && ($uid === auth.uid || data.parent().parent().child('meta/hostId').val() === auth.uid)",
-            "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 8" },
-            "colorIdx": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
-            "order": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3" },
+
+            "name": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 8 && (newData.val() === data.val() || newData.parent().parent().parent().child('meta/phase').val() === 'lobby' || newData.parent().parent().parent().child('meta/hostId').val() === auth.uid)"
+            },
             "connected": { ".validate": "newData.isBoolean()" },
+            "lastSeen": { ".validate": "newData.isNumber()" },
+
+            "colorIdx": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3 && (newData.val() === data.val() || !data.exists() || newData.parent().parent().parent().child('meta/hostId').val() === auth.uid)"
+            },
+            "order": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3 && (newData.val() === data.val() || !data.exists() || newData.parent().parent().parent().child('meta/hostId').val() === auth.uid)"
+            },
             "coins": {
               ".validate": "newData.isNumber() && newData.val() >= 0 && (newData.val() === data.val() || (!data.exists() && newData.val() === 0) || newData.parent().parent().parent().child('meta/hostId').val() === auth.uid)"
             },
@@ -39,14 +61,33 @@
               ".validate": "newData.isNumber() && newData.val() >= 0 && (newData.val() === data.val() || (!data.exists() && newData.val() === 0) || newData.parent().parent().parent().child('meta/hostId').val() === auth.uid)"
             },
             "pos": {
-              ".validate": "newData.isNumber() && newData.val() >= 0 && (newData.val() === data.val() || (!data.exists() && newData.val() === 0) || newData.parent().parent().parent().child('meta/hostId').val() === auth.uid)"
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 999 && (newData.val() === data.val() || (!data.exists() && newData.val() === 0) || newData.parent().parent().parent().child('meta/hostId').val() === auth.uid)"
+            },
+            "shielded": {
+              ".validate": "newData.isBoolean() && newData.parent().parent().parent().child('meta/hostId').val() === auth.uid"
+            },
+            "inventory": {
+              "$slot": {
+                ".validate": "newData.isString() && newData.val().length <= 40 && newData.parent().parent().parent().parent().child('meta/hostId').val() === auth.uid"
+              }
+            },
+            "stats": {
+              "$stat": {
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.parent().parent().parent().parent().child('meta/hostId').val() === auth.uid"
+              }
             }
           }
         },
 
         "inputs": {
           "$uid": {
-            ".write": "auth != null && ($uid === auth.uid || data.parent().parent().child('meta/hostId').val() === auth.uid)"
+            ".write": "auth != null && ($uid === auth.uid || data.parent().parent().child('meta/hostId').val() === auth.uid)",
+            "seq": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+            "actionId": { ".validate": "newData.isString() && newData.val().length <= 80" },
+            "ts": { ".validate": "newData.isNumber()" },
+            "type": {
+              ".validate": "newData.val() === 'roll' || newData.val() === 'decision' || newData.val() === 'minigameScore' || newData.val() === 'useItem' || newData.val() === 'startGame'"
+            }
           }
         }
       }

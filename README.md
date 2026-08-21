@@ -4,17 +4,28 @@
 
 設計方針は [`CLAUDE.md`](./CLAUDE.md)、開発フェーズの進め方は [`docs/phase-prompts.md`](./docs/phase-prompts.md) を参照。
 
-## 現在の進捗
+## できること
 
-| Phase | 内容 | 状態 |
-|---|---|---|
-| 0 | 雛形・Firebase 接続・型定義 | ✅ 完了 |
-| 1 | ロビー | ✅ 完了 |
-| 2 | すごろく | ✅ 完了 |
-| 3 | ミニゲーム基盤 | ✅ 完了 |
-| 4 | ミニゲーム | ✅ 完了（11本）|
-| 5 | 演出・音・PWA | ✅ 完了 |
-| 6 | 切断・再接続・ホスト移譲 | 🔵 実装済み（実機での確認待ち） |
+- 2〜4人でルームに入り、すごろく＋ミニゲームを交互に遊ぶ
+- **分岐のあるグラフボード**（近道あり）。1マスずつ進み、分岐は本人が選ぶ
+- **動的なスター**（買うたびに場所が変わる）
+- **アイテム8種とショップ**
+- lucky / unlucky / item / warp / ボード固有イベント
+- **ミニゲーム11本**（個人戦。2vs2 / 1vs3 の基盤も実装済み）
+- 統計と**最終ボーナススター**、最終順位
+- 切断時の自動進行・**ホスト移譲**・リロード復帰
+- 効果音・PWA・画面スリープ防止
+
+## 設計のポイント
+
+| | |
+|---|---|
+| ホスト権威 | 乱数もロジックもホストだけ。他端末は `inputs` を送るだけ |
+| 入力の二重処理防止 | `seq` と `actionId` で古い入力・二重タップを弾く |
+| ホスト移譲 | `hostEpoch` を上げ、旧ホストのエンジンを止める |
+| 書き込み | 複数パスは1回の `update()` にまとめる |
+| ミニゲーム同期 | `startAt` の絶対時刻で全員同時開始 |
+| 出題の共通化 | 種から決定的に生成。通信は増やさない |
 
 ## セットアップ
 
@@ -257,16 +268,28 @@ tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json
 
 ```
 src/
-  lib/        firebase.ts, db.ts, dbGame.ts, parse.ts, time.ts, roomCode.ts
-  logic/      board.ts, board.test.ts, lobby.ts  ← 純関数のみ（React 非依存）
-  store/      useRoom.ts          ← ルーム購読を集約（Zustand）
-  hooks/      useHost.ts          ← ホストだけが回すゲームロジック
-  screens/    Home.tsx, Lobby.tsx, Board.tsx, PhasePlaceholder.tsx
-  components/ PlayerCard.tsx, Board3D.tsx, boardLayout.ts, Dice.tsx,
-              PlayerStatusBar.tsx
-  types.ts    RTDB のデータモデル（CLAUDE.md セクション4）
-  constants.ts
-  App.tsx     meta.phase を見て画面を出し分けるだけ
+  board/      boards/ items/ events/ registry.ts   ← ボード・アイテム定義
+  logic/      board, movement, items, shop, star, events,
+              ranking, reward, result, bonus, minigame, input
+              ← 純関数のみ。React にも Firebase にも依存しない
+  host/       hostEngine, gameSetup, turnFlow, movement, landing,
+              decisions, turnEnd, minigameEngine, bonusEngine
+              ← ホストだけが動かす進行ロジック
+  lib/        firebase, db, dbGame, parse, time, roomCode, sound, hostTiming
+  store/      useRoom.ts (Zustand)
+  screens/    Home, Lobby, Board, Minigame, MinigameResult,
+              FinalBonus, GameEnd
+  components/ Board3D, DecisionPanel, Dice, PlayerCard, PlayerStatusBar
+  minigames/  registry.ts + 11本
+  hooks/      useServerTime, useHostHandover, useWakeLock
 ```
 
-`minigames/` は Phase 3 以降に追加する。
+## 拡張のしかた
+
+| したいこと | さわる場所 |
+|---|---|
+| ミニゲームを足す | `src/minigames/{id}/` を作って `registry.ts` に追加 |
+| アイテムを足す | `src/board/items/registry.ts` の配列に追加 |
+| ボードを足す | `src/board/boards/` に作って `src/board/registry.ts` に追加 |
+| イベントを足す | `src/board/events/registry.ts` に追加 |
+| ルールの数値を変える | `src/constants.ts` |

@@ -144,10 +144,11 @@ export async function joinRoom(
   const players = room.players ?? {};
   const playerRef = ref(db, `${roomPath(roomCode)}/players/${uid}`);
 
-  // 既に席がある場合は再入場（席はそのまま、名前だけ更新）
+  // 既に席がある場合は再入場。
+  // 名前は書き換えない（ゲーム中は name の変更をルールで禁止しているため、
+  // ここで書くと再接続そのものが弾かれてしまう）
   if (players[uid]) {
     await update(playerRef, {
-      name,
       connected: true,
       lastSeen: serverTimestamp(),
     });

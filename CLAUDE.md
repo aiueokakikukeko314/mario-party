@@ -60,51 +60,86 @@ const isHost = myUid === room.meta.hostId;
 rooms/{roomCode}/
   meta:
     hostId: string
-    phase: "lobby" | "board" | "minigameIntro" | "minigame" | "minigameResult" | "gameEnd"
-    createdAt: number        # serverTimestamp
-    maxTurns: number         # 既定 10
-  players/
-    {uid}:
-      name: string
-      colorIdx: 0|1|2|3
-      coins: number
-      stars: number
-      pos: number            # マスのインデックス
-      order: number          # 手番順
-      connected: boolean     # onDisconnect で false
-      lastSeen: number
+    hostEpoch: number       # ホストが変わるたび +1
+    phase: Phase
+    createdAt / updatedAt: number
+  config:                   # ホストがロビーで決める。開始後は変えない
+    boardId / maxTurns / bonusAwardsEnabled / itemsEnabled / startingCoins
+  players/{uid}:
+    name / colorIdx / order / connected / lastSeen
+    coins / stars / pos     # ホストのみ書き込み可
+    inventory: { slot0?, slot1?, slot2? }
+    stats: { spacesMoved, minigameWins, minigameCoins, coinsEarned,
+             coinsLost, itemsUsed, shopSpent, luckyLanded,
+             unluckyLanded, eventLanded, starsBought }
+    shielded?: boolean
   board:
-    turn: number             # 1始まり
-    currentUid: string       # 今の手番プレイヤー
-    dice: number | null      # 出目（表示用）
-    animating: boolean
-    pending: "star" | null   # 手番プレイヤーの選択待ち（star マスの購入確認）
+    turn / currentUid / currentOrderIndex
+    action: BoardAction     # 画面内の細かい進行
+    diceValues[] / diceTotal / movesRemaining
+    starNodeId / previousStarNodeId
+    pendingDecision: PendingDecision | null
+    lastEvent / boardFlags / recentMinigameIds
+    lastProcessedInputSeq/{uid}: number
+    finalRush: boolean
   minigame:
-    id: string | null
-    startAt: number | null   # サーバー時刻の絶対値(ms)
-    endAt: number | null
-    scores/{uid}: number
-    ranking: string[] | null # uid の配列（1位→）
-  inputs/
-    {uid}: { type: string, value: unknown, ts: number }
+    id / mode / seed / startAt / endAt / teams / scores / submitted / ranking
+  bonus: { awards[], revealed }
+  inputs/{uid}: { seq, actionId, type, payload, ts }
 ```
 
 ### ルームコード
 4桁の英数字（紛らわしい `0 O 1 I` は除外）。`roomCode` をキーにする。
 
----
-
 ## 5. フェーズ状態機械
 
+`meta.phase` は**画面レベルの大分類だけ**を持つ。
+
 ```
-lobby → board → minigameIntro → minigame → minigameResult → board → ... → gameEnd
+lobby → gameSetup → board → minigameIntro → minigame → minigameResult
+      → board → ... → finalBonus → gameEnd
 ```
 
-- **画面遷移は必ず `meta.phase` に従う。** コンポーネント内で独自に画面を切り替えない。
-- `App.tsx` は `phase` を見て画面コンポーネントを出し分けるだけ。
+ボード内部の細かい進行は `board.action` に持たせ、`meta.phase` を増やさない。
+
+```
+turnStart → itemChoice → diceRoll → moving
+          → branchChoice / passingEvent → landingEvent → playerEnd
+```
+
+- **画面遷移は必ず `meta.phase` に従う。**
 - 遷移を起こしてよいのはホストのみ。
 
----
+### 選択待ち（PendingDecision）
+
+分岐・スター購入・ショップ・アイテムはすべて `board.pendingDecision` に統一する。
+現在手番の uid だけが答えられる。**必ず `timeoutAt` を持たせ、
+時間切れ・切断時はホストが既定の動作で進める**（ゲーム全体を止めない）。
+
+### 入力プロトコル
+
+```ts
+inputs/{uid} = { seq, actionId, type, payload, ts }
+```
+
+- プレイヤーは送るたびに `seq` を増やす
+- ホストは `seq <= lastProcessedInputSeq[uid]` の入力を無視する
+- `decision` は現在の `pendingDecision.id` と `actionId` が一致するものだけ受理
+
+これで二重タップ・再接続後の古い入力・遅延入力を二重処理しない。
+
+### ホスト移譲（hostEpoch）
+
+ホストが変わるたび `meta.hostEpoch` を +1 する。
+ホストのエンジンは起動時の epoch を保持し、DB 側と食い違ったら**即停止**する。
+旧ホストが復帰しても古いエンジンが処理を続けないようにするため。
+
+### 書き込み
+
+複数の場所を変えるときは `set()` を並べず、
+**1回の `update()`（multi-location update）**でまとめて書く。
+途中の状態が他端末に見えるのを防ぐため。`src/lib/dbGame.ts` の
+`applyRoomUpdate()` を使う。
 
 ## 6. 時刻同期（必須ルール）
 
@@ -163,34 +198,73 @@ export interface MinigameProps {
 
 ---
 
-## 8. マス（ボード）仕様
+## 8. ボード仕様
+
+ボードは**リングではなくグラフ**。`src/board/boards/` に定義する。
 
 ```ts
-type SquareType = "plus" | "minus" | "star" | "minigame" | "warp" | "empty";
+interface BoardNode {
+  id: number; x: number; y: number; z?: number;
+  type: "start" | "plus" | "minus" | "lucky" | "unlucky"
+      | "event" | "item" | "warp" | "empty";
+  next: number[];                       // 1つなら自動、2つ以上で分岐
+  facility?: "star" | "shop" | "gate";
+  eventId?: string; warpTo?: number;
+}
 ```
-- `plus`: +3コイン / `minus`: −3コイン（0未満にはしない）
-- `star`: コイン20枚を支払ってスター1つ購入。**買うかどうかは本人に確認する**（20枚未満なら確認せず素通り）
-- `warp`: ランダムなマスへ移動（ホストが乱数決定）
-- `minigame`: そのターンのミニゲーム報酬が2倍（1位 +20 / 2位 +10 / 3位 +4 / 4位 0）
-- `empty`: 何も起きない
-- ボードはリング状（1周したら先頭に戻る）、全24マス
 
-1ターン = 全員がサイコロを振る → ミニゲーム1回。
-ミニゲーム報酬: 1位 +10 / 2位 +5 / 3位 +2 / 4位 0 コイン。
-`maxTurns` 終了後、スター数 → コイン数 の順で勝敗判定。
+- `next.length >= 2` なら**本人だけ**がルートを選ぶ。他端末は待機表示
+- **移動は1マスずつ**。サイコロの結果を一気に適用しない
+- 分岐・通過イベントに達したら処理を止めて入力を待つ
 
----
+### マス効果
+
+`plus` +3 / `minus` −3（0未満にしない）/ `lucky` 良イベント /
+`unlucky` 悪イベント / `item` アイテム入手 / `warp` 移動 /
+`event` ボード固有イベント / `empty` なし。
+
+### スター（動的）
+
+固定位置ではなく `starCandidates` から抽選する。
+通過・着地時に20コイン以上なら**本人に購入確認**。
+購入後は現在位置と直前の位置を除いて再抽選する。
+
+### アイテム / ショップ
+
+持ち物は最大3個。`src/board/items/registry.ts` に登録するだけで増やせる。
+ショップは `facility: "shop"` のノード。品ぞろえはホストが決めた種から
+決定的に決まるので全端末で一致する。
+
+### 報酬
+
+ミニゲーム: 1位 +10 / 2位 +5 / 3位 +2 / 4位 0（`src/constants.ts`）。
+終盤（残り3ターン）は Final Rush で倍率がかかる。
+`maxTurns` 終了後、ボーナススター → スター数 → コイン数 の順で勝敗判定。
+完全同点はホストが振るタイブレークのサイコロで決める。
 
 ## 9. セキュリティルール（`database.rules.json`）
 
 必ず以下を満たすこと:
 - 匿名認証必須（`auth != null`）
-- `players/{uid}` は本人のみ書き込み可（ただし coins/stars/pos はホストのみ）
-- `board` / `minigame` / `meta` はホストのみ書き込み可
-- `inputs/{uid}` は本人のみ書き込み可
 - ルームは誰でも読める（コードを知っていれば入れる）
+- プレイヤー本人が書けるのは **name（ロビー中のみ）/ connected / lastSeen /
+  自分の inputs** だけ
+- `coins` `stars` `pos` `order` `colorIdx` `inventory` `stats` `shielded`
+  はホストのみ
+- `meta` `config` `board` `minigame` `bonus` はホストのみ。
+  ただし `meta/hostId` は「今のホストが切断中」のときだけ引き継ぎを許可
+- `inputs/{uid}` は `$uid === auth.uid` 必須。型・文字数・数値範囲を検証
 
----
+**注意**: RTDB では親で許可した `.write` が子へカスケードするため、
+子の `.write` では制限できない。本人に書かせたくない項目は
+`.validate` で縛ること（`.validate` は常に評価される）。
+
+変更したら必ず検証してから適用する。
+
+```bash
+npx firebase emulators:start --only database --project demo-party
+node scripts/test-rules.mjs
+```
 
 ## 10. コーディング規約
 
