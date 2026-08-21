@@ -99,7 +99,8 @@ export default function Board() {
         </motion.p>
       )}
 
-      {decision && (
+      {/* サイコロ待ちは下のバーに出るので、パネルは出さない */}
+      {decision && decision.type !== "eventChoice" && (
         <div className="shrink-0 px-4 pt-2">
           <DecisionPanel
             decision={decision}

@@ -20,7 +20,7 @@ export default function PlayerStatusBar({
   const rankOf = new Map(ranked.map((entry) => [entry.uid, entry.rank]));
 
   return (
-    <div className="grid shrink-0 grid-cols-2 gap-1 px-2 pt-2">
+    <div className="grid shrink-0 grid-cols-2 gap-1 py-2 pl-2 pr-12">
       {players.map(({ uid, player }) => {
         const color = PLAYER_COLORS[player.colorIdx];
         const active = uid === currentUid;

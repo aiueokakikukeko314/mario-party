@@ -97,6 +97,7 @@ export default function Board3D({
             <Tile
               key={node.id}
               node={node}
+              view={view}
               isStar={node.id === starNodeId}
               highlighted={branchOptions?.includes(node.id) ?? false}
             />
@@ -119,7 +120,7 @@ export default function Board3D({
           touchedRef.current = false;
           setView(DEFAULT_VIEW);
         }}
-        className="absolute right-2 top-2 rounded-lg bg-slate-800/80 px-3 py-2 text-xs text-slate-200"
+        className="absolute left-2 top-2 rounded-lg bg-slate-800/80 px-3 py-2 text-xs text-slate-200"
       >
         視点リセット
       </button>
@@ -146,10 +147,12 @@ function offsetFor(
 
 function Tile({
   node,
+  view,
   isStar,
   highlighted,
 }: {
   node: BoardNode;
+  view: { x: number; y: number };
   isStar: boolean;
   highlighted: boolean;
 }) {
@@ -163,7 +166,9 @@ function Tile({
         height: TILE_SIZE,
         marginLeft: -TILE_SIZE / 2,
         marginTop: -TILE_SIZE / 2,
-        transform: `translate3d(${node.x}px, ${node.y}px, ${node.z ?? 0}px) rotateX(90deg)`,
+        // 盤の回転を打ち消して常にカメラを向かせる。
+        // 寝かせたままだと角度によって文字が回って読めなくなるため。
+        transform: `translate3d(${node.x}px, ${node.y}px, ${node.z ?? 0}px) rotateY(${-view.y}deg) rotateX(${-view.x}deg)`,
       }}
     >
       <div
