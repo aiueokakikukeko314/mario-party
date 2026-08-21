@@ -29,3 +29,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# Firebase CLI
+.firebase
+database-debug.log
+firebase-debug.log

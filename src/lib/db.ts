@@ -182,6 +182,29 @@ export async function leaveRoom(
 }
 
 /**
+ * ホストが切断したときに、自分がホストを引き継ぐ。
+ *
+ * 複数端末が同時に引き継ごうとしても1台しか成功しないよう transaction を使う
+ * （CLAUDE.md セクション12）。すでに誰かが引き継いでいたら中断する。
+ * 戻り値は引き継げたかどうか。
+ */
+export async function claimHost(
+  roomCode: string,
+  previousHostId: string,
+  uid: string,
+): Promise<boolean> {
+  const result = await runTransaction(
+    ref(db, `${roomPath(roomCode)}/meta/hostId`),
+    (current: unknown) => {
+      // 先に誰かが取っていたら何もしない
+      if (current !== previousHostId) return;
+      return uid;
+    },
+  );
+  return result.committed;
+}
+
+/**
  * ゲームを開始する（ホストのみ）。
  * 呼び出し側で isHost を確認すること（CLAUDE.md セクション3）。
  */

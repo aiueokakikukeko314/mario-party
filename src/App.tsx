@@ -12,6 +12,7 @@ import GameEnd from "./screens/GameEnd";
 import Board from "./screens/Board";
 import PhasePlaceholder from "./screens/PhasePlaceholder";
 import { useHost } from "./hooks/useHost";
+import { useHostHandover } from "./hooks/useHostHandover";
 import { useWakeLock } from "./hooks/useWakeLock";
 import { initSound, isMuted, setMuted } from "./lib/sound";
 
@@ -25,6 +26,7 @@ export default function App() {
   const roomCode = useRoom((s) => s.roomCode);
   const room = useRoom((s) => s.room);
   const roomLoaded = useRoom((s) => s.roomLoaded);
+  const restoring = useRoom((s) => s.restoring);
   const leave = useRoom((s) => s.leave);
 
   const [authError, setAuthError] = useState<string | null>(null);
@@ -34,6 +36,8 @@ export default function App() {
 
   // ホスト端末だけがゲームロジックを回す（内部で isHost をガードしている）
   useHost();
+  // ホストが落ちたら、次の人が引き継ぐ（ホスト以外で動く）
+  useHostHandover();
   // ルームに入っている間は画面を消さない
   useWakeLock(roomCode !== null);
 
@@ -115,7 +119,7 @@ export default function App() {
   function screenKey(): string {
     if (authError !== null) return "error";
     if (myUid === null) return "boot";
-    if (roomCode === null) return "home";
+    if (roomCode === null) return restoring ? "restoring" : "home";
     if (!roomLoaded) return "loading";
     if (room === null) return "gone";
     // イントロとプレイは同じ画面なので、まとめて1つの key にする
@@ -137,6 +141,8 @@ export default function App() {
       return <Centered title="準備しています…" />;
     }
     if (roomCode === null) {
+      // リロード直後は、前のルームに戻れるか確かめてからホームを出す
+      if (restoring) return <Centered title="まえのルームに もどっています…" />;
       return <Home />;
     }
     if (!roomLoaded) {

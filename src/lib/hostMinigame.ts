@@ -42,8 +42,12 @@ export async function collectScores(
   if (moved) return;
 
   const scores = minigame.scores;
+  // 離脱した人のスコアは待たない（CLAUDE.md セクション12）。
+  // 「0点で確定」ではなく未報告のまま最下位に置く。0 を入れると
+  // ズレの小ささを競うゲームで離脱者が1位になってしまうため。
   const allScored = ordered.every(
-    (entry) => typeof scores?.[entry.uid] === "number",
+    (entry) =>
+      typeof scores?.[entry.uid] === "number" || !entry.player.connected,
   );
   const deadlinePassed =
     serverNow() > (minigame.endAt ?? 0) + SCORE_GRACE_MS;

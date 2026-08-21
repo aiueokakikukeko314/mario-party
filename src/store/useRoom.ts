@@ -17,6 +17,42 @@ import type { Player, Room } from "../types";
  * コンポーネントはこのストア経由でのみルーム状態を読む。
  */
 
+/**
+ * リロードしても同じ席に戻れるよう、入っているルームを覚えておく。
+ * 匿名認証の uid はブラウザに残るので、同じ uid で復帰できる。
+ */
+const SAVED_KEY = "party-game:session";
+
+interface SavedSession {
+  roomCode: string;
+  name: string;
+}
+
+function saveSession(session: SavedSession | null): void {
+  try {
+    if (session === null) localStorage.removeItem(SAVED_KEY);
+    else localStorage.setItem(SAVED_KEY, JSON.stringify(session));
+  } catch {
+    // 保存できなくても遊べる
+  }
+}
+
+function loadSession(): SavedSession | null {
+  try {
+    const raw = localStorage.getItem(SAVED_KEY);
+    if (raw === null) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const record = parsed as Record<string, unknown>;
+    const roomCode = record["roomCode"];
+    const name = record["name"];
+    if (typeof roomCode !== "string" || typeof name !== "string") return null;
+    return { roomCode, name };
+  } catch {
+    return null;
+  }
+}
+
 // 購読解除関数は state に入れない（再レンダリングと無関係なため）
 let unsubscribeRoom: (() => void) | null = null;
 let unsubscribePresence: (() => void) | null = null;
@@ -46,9 +82,13 @@ interface RoomStore {
   /** ホーム画面に出すエラー文言 */
   error: string | null;
 
+  /** 直前のルームに戻ろうとしている最中か */
+  restoring: boolean;
+
   setMyUid: (uid: string) => void;
   setMyName: (name: string) => void;
   clearError: () => void;
+  restore: () => Promise<void>;
   create: () => Promise<void>;
   join: (inputCode: string) => Promise<void>;
   leave: () => Promise<void>;
@@ -63,8 +103,38 @@ export const useRoom = create<RoomStore>()((set, get) => ({
   roomLoaded: false,
   busy: false,
   error: null,
+  restoring: loadSession() !== null,
 
-  setMyUid: (uid) => set({ myUid: uid }),
+  setMyUid: (uid) => {
+    set({ myUid: uid });
+    void get().restore();
+  },
+
+  /**
+   * リロード前に入っていたルームへ戻る。
+   * 部屋が消えていたり、すでに始まっていて入れない場合は忘れる。
+   */
+  restore: async () => {
+    const saved = loadSession();
+    const { myUid } = get();
+    if (saved === null || myUid === null) {
+      set({ restoring: false });
+      return;
+    }
+    try {
+      const result = await joinRoom(saved.roomCode, myUid, saved.name);
+      if (result.ok) {
+        set({ myName: saved.name });
+        enterRoom(set, saved.roomCode, myUid, saved.name);
+      } else {
+        saveSession(null);
+      }
+    } catch {
+      saveSession(null);
+    } finally {
+      set({ restoring: false });
+    }
+  },
   setMyName: (name) => set({ myName: name }),
   clearError: () => set({ error: null }),
 
@@ -78,7 +148,7 @@ export const useRoom = create<RoomStore>()((set, get) => ({
         set({ error: "ルームを作成できませんでした。もう一度お試しください" });
         return;
       }
-      enterRoom(set, result.roomCode, myUid);
+      enterRoom(set, result.roomCode, myUid, myName.trim());
     } catch {
       set({ error: "通信に失敗しました。電波状況を確認してください" });
     } finally {
@@ -97,7 +167,7 @@ export const useRoom = create<RoomStore>()((set, get) => ({
         set({ error: JOIN_ERROR_MESSAGE[result.reason] });
         return;
       }
-      enterRoom(set, roomCode, myUid);
+      enterRoom(set, roomCode, myUid, myName.trim());
     } catch {
       set({ error: "通信に失敗しました。電波状況を確認してください" });
     } finally {
@@ -108,6 +178,7 @@ export const useRoom = create<RoomStore>()((set, get) => ({
   leave: async () => {
     const { roomCode, myUid, room } = get();
     teardown();
+    saveSession(null);
     set({ roomCode: null, room: null, roomLoaded: false, error: null });
     if (roomCode === null || myUid === null) return;
     try {
@@ -134,13 +205,19 @@ export const useRoom = create<RoomStore>()((set, get) => ({
 type SetState = (partial: Partial<RoomStore>) => void;
 
 /** ルームの購読と接続監視を開始する。 */
-function enterRoom(set: SetState, roomCode: string, uid: string): void {
+function enterRoom(
+  set: SetState,
+  roomCode: string,
+  uid: string,
+  name?: string,
+): void {
   teardown();
   set({ roomCode, room: null, roomLoaded: false, error: null });
   unsubscribeRoom = subscribeRoom(roomCode, (room) =>
     set({ room, roomLoaded: true }),
   );
   unsubscribePresence = setupPresence(roomCode, uid);
+  if (name !== undefined) saveSession({ roomCode, name });
 }
 
 /** order 昇順のプレイヤー一覧。 */

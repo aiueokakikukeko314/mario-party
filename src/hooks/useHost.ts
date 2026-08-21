@@ -14,6 +14,7 @@ import {
   INTRO_MS,
   RESULT_MS,
   SCORE_GRACE_MS,
+  DISCONNECT_ROLL_MS,
   STAR_CHOICE_TIMEOUT_MS,
   TICK_MS,
 } from "../lib/hostTiming";
@@ -42,6 +43,9 @@ export function useHost(): void {
   const recoveredRef = useRef(false);
   // star の返事待ちの保険タイマー
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 切断中プレイヤーの手番を自動で進めるタイマー
+  const autoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoForRef = useRef<string | null>(null);
   // 直前に出したミニゲーム。2ターン続けて同じものを出さないために覚えておく
   const lastGameRef = useRef<string | null>(null);
   // タイマー発火時に最新の room を見るための箱
@@ -63,6 +67,7 @@ export function useHost(): void {
   useEffect(() => {
     return () => {
       if (timerRef.current !== null) clearTimeout(timerRef.current);
+      if (autoTimerRef.current !== null) clearTimeout(autoTimerRef.current);
     };
   }, []);
 
@@ -179,6 +184,34 @@ export function useHost(): void {
     clearTimer();
 
     if (board.animating) return;
+
+    // --- 切断中の人の手番は待たずに自動で進める（セクション12）---
+    const currentPlayer = players[board.currentUid];
+    const away = currentPlayer !== undefined && !currentPlayer.connected;
+    if (!away && autoForRef.current !== null) {
+      // 戻ってきたら自動サイコロは取り消す
+      if (autoTimerRef.current !== null) clearTimeout(autoTimerRef.current);
+      autoTimerRef.current = null;
+      autoForRef.current = null;
+    }
+    if (away && autoForRef.current !== board.currentUid) {
+      autoForRef.current = board.currentUid;
+      if (autoTimerRef.current !== null) clearTimeout(autoTimerRef.current);
+      autoTimerRef.current = setTimeout(() => {
+        autoTimerRef.current = null;
+        autoForRef.current = null;
+        const latest = roomRef.current;
+        const latestBoard = latest?.board;
+        // まだ同じ人の手番で、まだ戻ってきていないときだけ振る
+        if (!latest || latestBoard?.currentUid !== board.currentUid) return;
+        if (latest.players?.[board.currentUid]?.connected === true) return;
+        if (latestBoard.animating || latestBoard.pending !== null) return;
+        busyRef.current = true;
+        void handleRoll(roomCode, latest, board.currentUid).finally(() => {
+          busyRef.current = false;
+        });
+      }, DISCONNECT_ROLL_MS);
+    }
 
     // --- 手番プレイヤーの「振る」入力を処理する ---
     if (room.inputs?.[board.currentUid]?.type !== "roll") return;

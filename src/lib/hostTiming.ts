@@ -19,6 +19,10 @@ export const INTRO_MS = 5000;
 export const SCORE_GRACE_MS = 3000;
 /** 結果を見せてから次のターンへ移るまでの時間 */
 export const RESULT_MS = 3000;
+/** 切断中プレイヤーの手番を、待たずに自動で進めるまでの時間 */
+export const DISCONNECT_ROLL_MS = 15000;
+/** ホストが切断してから、次の人が引き継ぐまでの待ち時間 */
+export const HANDOVER_DELAY_MS = 6000;
 /** 時刻で進むフェーズの間だけ回す再評価の間隔 */
 export const TICK_MS = 250;
 
