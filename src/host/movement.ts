@@ -29,11 +29,12 @@ export async function advanceOneStep(ctx: HostCtx): Promise<void> {
   if (!player) return;
 
   // 進む先が2つ以上なら本人に選んでもらう
-  if (isBranch(ctx.board, player.pos)) {
+  const flags = board.boardFlags;
+  if (isBranch(ctx.board, player.pos, flags)) {
     const decision = makeDecision(
       uid,
       "branch",
-      { from: player.pos, options: nextOf(ctx.board, player.pos) },
+      { from: player.pos, options: nextOf(ctx.board, player.pos, flags) },
       TIMEOUT_BRANCH_MS,
       ctx.now,
     );
@@ -41,7 +42,7 @@ export async function advanceOneStep(ctx: HostCtx): Promise<void> {
     return;
   }
 
-  await moveTo(ctx, uid, stepFrom(ctx.board, player.pos));
+  await moveTo(ctx, uid, stepFrom(ctx.board, player.pos, undefined, flags));
 }
 
 /**

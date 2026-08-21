@@ -49,12 +49,13 @@ export async function resolveBranch(
 ): Promise<void> {
   const player = playerOf(ctx, uid);
   if (!player) return;
+  const flags = ctx.room.board?.boardFlags;
   const raw = asRecord(payload)["to"];
   const requested = typeof raw === "number" ? raw : null;
   const to =
-    requested !== null && isLegalStep(ctx.board, player.pos, requested)
+    requested !== null && isLegalStep(ctx.board, player.pos, requested, flags)
       ? requested
-      : stepFrom(ctx.board, player.pos);
+      : stepFrom(ctx.board, player.pos, undefined, flags);
 
   await applyRoomUpdate(ctx.roomCode, actionPaths("moving", null));
   await moveTo(ctx, uid, to);

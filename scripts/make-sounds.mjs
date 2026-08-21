@@ -111,6 +111,35 @@ const sounds = {
     });
     return buf;
   },
+  // アイテム入手・使用
+  item: () => {
+    const buf = make(0.4);
+    tone(buf, 0, 0.1, 700, { type: "triangle", gain: 0.22, decay: 3 });
+    tone(buf, 0.09, 0.28, 1100, { type: "triangle", gain: 0.22, decay: 4 });
+    return buf;
+  },
+  // 分岐・ルート選択
+  branch: () => {
+    const buf = make(0.3);
+    tone(buf, 0, 0.25, (t) => 500 + t * 300, { type: "square", gain: 0.18, decay: 5 });
+    return buf;
+  },
+  // ショップ
+  shop: () => {
+    const buf = make(0.5);
+    [784, 988, 1319].forEach((f, i) => {
+      tone(buf, i * 0.08, 0.3, f, { type: "triangle", gain: 0.2, decay: 4 });
+    });
+    return buf;
+  },
+  // ボードイベント
+  event: () => {
+    const buf = make(0.6);
+    tone(buf, 0, 0.5, (t) => 300 + Math.sin(t * 30) * 150, {
+      type: "square", gain: 0.2, decay: 3,
+    });
+    return buf;
+  },
   // 勝利のファンファーレ
   win: () => {
     const buf = make(1.6);

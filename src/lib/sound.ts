@@ -17,6 +17,10 @@ const FILES = {
   start: "start.wav",
   tap: "tap.wav",
   star: "star.wav",
+  item: "item.wav",
+  branch: "branch.wav",
+  shop: "shop.wav",
+  event: "event.wav",
   win: "win.wav",
 } as const;
 

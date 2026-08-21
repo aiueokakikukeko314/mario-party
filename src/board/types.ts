@@ -31,6 +31,16 @@ export interface BoardNode {
   warpTo?: number;
 }
 
+/**
+ * 開け閉めできるルート。boardFlags の値で通れるかが変わる。
+ * flag が false のときだけ閉じる（未設定なら開いている扱い）。
+ */
+export interface BoardGate {
+  from: number;
+  to: number;
+  flag: string;
+}
+
 export interface BoardDef {
   id: string;
   name: string;
@@ -38,4 +48,5 @@ export interface BoardDef {
   /** スターが置かれうるノード */
   starCandidates: number[];
   nodes: readonly BoardNode[];
+  gates?: readonly BoardGate[];
 }

@@ -26,9 +26,10 @@ export const BOARD_EVENTS: readonly BoardEventDef[] = [
     id: "bridge-shift",
     name: "はしのむき",
     run: (_random, flags) => {
-      const open = flags["bridgeOpen"] !== true;
+      // 近道2（16番からの分かれ道）を開け閉めする
+      const open = flags["bridgeOpen"] === false;
       return {
-        text: open ? "はしが かかった！" : "はしが はずれた…",
+        text: open ? "ちかみちの はしが かかった！" : "ちかみちの はしが はずれた…",
         flags: { bridgeOpen: open },
       };
     },

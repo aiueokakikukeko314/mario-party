@@ -14,14 +14,36 @@ export function nodeAt(board: BoardDef, id: number): BoardNode | null {
   return board.nodes.find((node) => node.id === id) ?? null;
 }
 
-/** そのノードから進める先。 */
-export function nextOf(board: BoardDef, id: number): number[] {
-  return nodeAt(board, id)?.next ?? [];
+export type BoardFlags = Record<string, boolean | number | string> | undefined;
+
+/**
+ * そのノードから進める先。
+ * 閉じているゲートは除く。ただし全部消えて行き止まりになる場合は元に戻す。
+ */
+export function nextOf(
+  board: BoardDef,
+  id: number,
+  flags?: BoardFlags,
+): number[] {
+  const all = nodeAt(board, id)?.next ?? [];
+  const gates = board.gates;
+  if (!gates || gates.length === 0) return all;
+
+  const open = all.filter((to) => {
+    const gate = gates.find((item) => item.from === id && item.to === to);
+    if (!gate) return true;
+    return flags?.[gate.flag] !== false;
+  });
+  return open.length > 0 ? open : all;
 }
 
 /** 分岐（進める先が2つ以上）か。 */
-export function isBranch(board: BoardDef, id: number): boolean {
-  return nextOf(board, id).length >= 2;
+export function isBranch(
+  board: BoardDef,
+  id: number,
+  flags?: BoardFlags,
+): boolean {
+  return nextOf(board, id, flags).length >= 2;
 }
 
 /**
@@ -59,8 +81,9 @@ export function isLegalStep(
   board: BoardDef,
   from: number,
   to: number,
+  flags?: BoardFlags,
 ): boolean {
-  return nextOf(board, from).includes(to);
+  return nextOf(board, from, flags).includes(to);
 }
 
 /**
@@ -72,8 +95,9 @@ export function stepFrom(
   board: BoardDef,
   from: number,
   choice?: number,
+  flags?: BoardFlags,
 ): number {
-  const options = nextOf(board, from);
+  const options = nextOf(board, from, flags);
   const first = options[0];
   if (first === undefined) return from;
   if (choice !== undefined && options.includes(choice)) return choice;

@@ -108,4 +108,7 @@ export const partyIsland: BoardDef = {
   // スターが置かれうる場所。本道と近道の両方に散らす
   starCandidates: [2, 6, 10, 14, 19, 22, 26, 27],
   nodes,
+  // 近道2は「はしのむき」イベントで開け閉めする。
+  // 初期状態は開いている（フラグ未設定 = 開）
+  gates: [{ from: 16, to: 27, flag: "bridgeOpen" }],
 };

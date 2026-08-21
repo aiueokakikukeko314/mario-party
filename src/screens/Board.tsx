@@ -5,7 +5,7 @@ import DecisionPanel from "../components/DecisionPanel";
 import Dice from "../components/Dice";
 import PlayerStatusBar from "../components/PlayerStatusBar";
 import { inventoryList } from "../logic/items";
-import { playSound } from "../lib/sound";
+import { playSound, type SoundName } from "../lib/sound";
 import { selectPlayers, useRoom } from "../store/useRoom";
 
 /**
@@ -13,6 +13,17 @@ import { selectPlayers, useRoom } from "../store/useRoom";
  * 進行状態（board.action）に応じて出すものを変えるだけで、
  * 判定はすべてホストが行う（CLAUDE.md セクション3）。
  */
+/** ボードで起きたことと効果音の対応。 */
+const SOUND_BY_KIND: Record<string, SoundName | undefined> = {
+  lucky: "coin",
+  unlucky: "lose",
+  item: "item",
+  shop: "shop",
+  event: "event",
+  warp: "branch",
+  star: "star",
+};
+
 function showPanel(decision: { type: string; options: unknown }): boolean {
   if (decision.type !== "eventChoice") return true;
   return (decision.options as { kind?: string })?.kind === "reroll";
@@ -68,6 +79,14 @@ export default function Board() {
     decision?.type === "eventChoice" &&
     (decision.options as { kind?: string })?.kind === "reroll";
   const canRoll = myTurn && action === "diceRoll" && !isRerollPrompt && !sent;
+
+  // 起きたことに合わせて音を鳴らす（表示と同じ lastEvent を見る）
+  const eventAt = board?.lastEvent?.at ?? 0;
+  const eventKind = board?.lastEvent?.kind ?? "";
+  useEffect(() => {
+    const sound = SOUND_BY_KIND[eventKind];
+    if (sound) playSound(sound);
+  }, [eventAt, eventKind]);
   const branchOptions =
     decision?.type === "branch"
       ? ((decision.options as { options?: number[] })?.options ?? [])
@@ -94,6 +113,7 @@ export default function Board() {
         players={players}
         currentUid={currentUid}
         starNodeId={board?.starNodeId ?? -1}
+        {...(board?.boardFlags ? { flags: board.boardFlags } : {})}
         {...(branchOptions ? { branchOptions } : {})}
       />
 

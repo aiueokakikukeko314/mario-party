@@ -81,6 +81,37 @@ describe("分岐", () => {
   });
 });
 
+describe("開け閉めできるルート（ゲート）", () => {
+  it("フラグが未設定なら開いている", () => {
+    expect(nextOf(partyIsland, 16)).toEqual([17, 27]);
+    expect(isBranch(partyIsland, 16)).toBe(true);
+  });
+
+  it("フラグが false なら閉じて分岐でなくなる", () => {
+    const closed = { bridgeOpen: false };
+    expect(nextOf(partyIsland, 16, closed)).toEqual([17]);
+    expect(isBranch(partyIsland, 16, closed)).toBe(false);
+  });
+
+  it("閉じているルートは選べない", () => {
+    const closed = { bridgeOpen: false };
+    expect(isLegalStep(partyIsland, 16, 27, closed)).toBe(false);
+    expect(isLegalStep(partyIsland, 16, 27, { bridgeOpen: true })).toBe(true);
+    expect(stepFrom(partyIsland, 16, 27, closed)).toBe(17);
+  });
+
+  it("ゲートを閉じても行き止まりにはならない", () => {
+    const closed = { bridgeOpen: false };
+    for (const node of partyIsland.nodes) {
+      expect(nextOf(partyIsland, node.id, closed).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("ゲートの無い分岐は影響を受けない", () => {
+    expect(nextOf(partyIsland, 4, { bridgeOpen: false })).toEqual([5, 24]);
+  });
+});
+
 describe("小さな純関数", () => {
   it("コインは0未満にならない", () => {
     expect(clampCoins(-10)).toBe(0);

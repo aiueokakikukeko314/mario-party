@@ -36,6 +36,8 @@ interface Props {
   starNodeId: number;
   /** 分岐で選べる候補（強調表示する） */
   branchOptions?: number[];
+  /** ボード固有イベントの状態。閉じたルートの表示に使う */
+  flags?: Record<string, boolean | number | string>;
 }
 
 export default function Board3D({
@@ -44,6 +46,7 @@ export default function Board3D({
   currentUid,
   starNodeId,
   branchOptions,
+  flags,
 }: Props) {
   const board = useMemo(() => findBoard(boardId), [boardId]);
   const [view, setView] = useState(DEFAULT_VIEW);
@@ -51,6 +54,15 @@ export default function Board3D({
   const touchedRef = useRef(false);
 
   const currentPos = players.find((entry) => entry.uid === currentUid)?.player.pos;
+
+  // 閉じているルートの入口は薄く表示して、通れないことを分かるようにする
+  const closedIds = useMemo(() => {
+    const closed = new Set<number>();
+    for (const gate of board.gates ?? []) {
+      if (flags?.[gate.flag] === false) closed.add(gate.to);
+    }
+    return closed;
+  }, [board, flags]);
 
   // 手番の人が見やすい向きへ自動で回す（自分でドラッグしたあとは追従しない）
   useEffect(() => {
@@ -100,6 +112,7 @@ export default function Board3D({
               view={view}
               isStar={node.id === starNodeId}
               highlighted={branchOptions?.includes(node.id) ?? false}
+              closed={closedIds.has(node.id)}
             />
           ))}
           {players.map(({ uid, player }, index) => (
@@ -150,11 +163,13 @@ function Tile({
   view,
   isStar,
   highlighted,
+  closed,
 }: {
   node: BoardNode;
   view: { x: number; y: number };
   isStar: boolean;
   highlighted: boolean;
+  closed: boolean;
 }) {
   const style = TILE_STYLE[node.type];
   const facility = isStar ? "★" : node.facility === "shop" ? "🛒" : null;
@@ -174,9 +189,11 @@ function Tile({
       <div
         className={`flex size-full items-center justify-center rounded-lg text-[11px] font-bold shadow-md ${style.className} ${
           highlighted ? "ring-4 ring-sky-300" : ""
-        } ${isStar ? "ring-2 ring-amber-200" : ""}`}
+        } ${isStar ? "ring-2 ring-amber-200" : ""} ${
+          closed ? "opacity-25 grayscale" : ""
+        }`}
       >
-        {facility ?? style.label}
+        {closed ? "✕" : (facility ?? style.label)}
       </div>
     </div>
   );
