@@ -36,22 +36,40 @@ export function findMinigame(id: string | null | undefined): MinigameDef | null 
   return MINIGAMES.find((game) => game.id === id) ?? null;
 }
 
+/** そのゲームの対戦形式。未指定は ffa。 */
+export function modeOf(game: MinigameDef): "ffa" | "twoVsTwo" | "oneVsThree" {
+  return game.mode ?? "ffa";
+}
+
 /**
  * ミニゲームを1本選ぶ。
- * 乱数はホストが生成するので、0以上1未満の値を引数で受け取る
- * （CLAUDE.md セクション3）。
+ * 乱数はホストが生成するので 0以上1未満の値を受け取る（セクション3）。
  *
- * `excludeId` に直前のゲームを渡すと、それを除いて選ぶ。
- * 同じゲームが2ターン続けて出るのを防ぐため。
+ * - `excludeIds` に直近のゲームを渡すと、それらを除いて選ぶ
+ * - `playerCount` に対応していない形式のゲームは候補にしない
  */
 export function pickMinigame(
   random: number,
-  excludeId?: string | null,
+  excludeIds: readonly string[] = [],
+  playerCount = 4,
 ): MinigameDef | null {
   if (MINIGAMES.length === 0) return null;
-  const filtered = MINIGAMES.filter((game) => game.id !== excludeId);
-  // 除外すると空になる場合（登録が1本だけ）は全体から選ぶ
-  const pool = filtered.length > 0 ? filtered : MINIGAMES;
+
+  const playable = MINIGAMES.filter((game) =>
+    supportsCount(modeOf(game), playerCount),
+  );
+  const base = playable.length > 0 ? playable : MINIGAMES;
+  const filtered = base.filter((game) => !excludeIds.includes(game.id));
+  const pool = filtered.length > 0 ? filtered : base;
+
   const index = Math.min(pool.length - 1, Math.floor(random * pool.length));
   return pool[index] ?? null;
+}
+
+function supportsCount(
+  mode: "ffa" | "twoVsTwo" | "oneVsThree",
+  count: number,
+): boolean {
+  if (mode === "twoVsTwo" || mode === "oneVsThree") return count === 4;
+  return count >= 2;
 }

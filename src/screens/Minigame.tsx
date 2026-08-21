@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useServerNow } from "../hooks/useServerTime";
 import { findMinigame } from "../minigames/registry";
-import { sendInput } from "../lib/dbGame";
 import { playSound } from "../lib/sound";
 import { useRoom } from "../store/useRoom";
 
@@ -17,7 +16,7 @@ import { useRoom } from "../store/useRoom";
  */
 export default function Minigame() {
   const room = useRoom((s) => s.room);
-  const roomCode = useRoom((s) => s.roomCode);
+  const send = useRoom((s) => s.send);
   const myUid = useRoom((s) => s.myUid);
   const now = useServerNow();
 
@@ -54,11 +53,14 @@ export default function Minigame() {
   // minigame ノードはホストしか書けないので inputs 経由で渡す（セクション9）
   useEffect(() => {
     if (!finished || sentRef.current) return;
-    if (roomCode === null || myUid === null) return;
+    if (myUid === null) return;
     sentRef.current = true;
     setSent(true);
-    void sendInput(roomCode, myUid, "score", scoreRef.current ?? 0);
-  }, [finished, roomCode, myUid]);
+    // minigame ノードはホストしか書けないので inputs 経由で渡す（セクション9）
+    void send("minigameScore", room?.minigame?.id ?? "minigame", {
+      score: scoreRef.current ?? 0,
+    });
+  }, [finished, myUid, send, room?.minigame?.id]);
 
   if (!game || startAt === null || endAt === null) {
     return <Centered>ミニゲームを えらんでいます…</Centered>;

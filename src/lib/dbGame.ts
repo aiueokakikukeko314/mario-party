@@ -1,140 +1,62 @@
 import { ref, remove, serverTimestamp, set, update } from "firebase/database";
 import { db } from "./firebase";
-import type { BoardState, MinigameState, Phase, Player } from "../types";
+import type { InputType } from "../types";
 
 /**
- * ボード進行に関する RTDB 書き込み（CLAUDE.md セクション10 の lib 層）。
+ * ゲーム進行の RTDB 書き込み（CLAUDE.md セクション10 の lib 層）。
  *
- * `board` / `meta` / `players.*.coins` を書けるのはホストだけ
- * （CLAUDE.md セクション3）。ここの関数はホスト用と明記したもの以外、
- * 呼び出し側で isHost を確認すること。
+ * `board` / `meta` / `config` / `minigame` / `players.*` の権威データを
+ * 書けるのはホストだけ（セクション3）。呼び出し側で isHost を確認すること。
+ *
+ * 複数の場所を同時に変えるときは set() を並べず、
+ * 1回の update() で書く（multi-location update）。途中の状態が
+ * 他端末に見えるのを防ぐため。
  */
 
-const roomPath = (roomCode: string) => `rooms/${roomCode}`;
+export const roomPath = (roomCode: string) => `rooms/${roomCode}`;
+
+/**
+ * 【ホスト】ルーム配下を1回の書き込みでまとめて更新する。
+ * paths は "board/action" のようにルーム直下からの相対パス。
+ */
+export async function applyRoomUpdate(
+  roomCode: string,
+  paths: Record<string, unknown>,
+): Promise<void> {
+  const payload: Record<string, unknown> = { ...paths };
+  payload["meta/updatedAt"] = serverTimestamp();
+  await update(ref(db, roomPath(roomCode)), payload);
+}
 
 /** 【全員】自分の入力を送る。ホストがこれを見てロジックを実行する。 */
 export async function sendInput(
   roomCode: string,
   uid: string,
-  type: string,
-  value: unknown = null,
+  input: { seq: number; actionId: string; type: InputType; payload?: unknown },
 ): Promise<void> {
   await set(ref(db, `${roomPath(roomCode)}/inputs/${uid}`), {
-    type,
-    value,
+    seq: input.seq,
+    actionId: input.actionId,
+    type: input.type,
+    payload: input.payload ?? null,
     ts: serverTimestamp(),
   });
 }
 
 /** 【ホスト】処理済みの入力を消す。 */
-export async function clearInput(
-  roomCode: string,
-  uid: string,
-): Promise<void> {
+export async function clearInput(roomCode: string, uid: string): Promise<void> {
   await remove(ref(db, `${roomPath(roomCode)}/inputs/${uid}`));
-}
-
-/** 【ホスト】ボードの状態を書き換える。 */
-export async function updateBoard(
-  roomCode: string,
-  patch: Partial<BoardState>,
-): Promise<void> {
-  await update(ref(db, `${roomPath(roomCode)}/board`), patch);
-}
-
-/** 【ホスト】ボードを初期化する（ターン1、先頭プレイヤーの手番）。 */
-export async function initBoard(
-  roomCode: string,
-  currentUid: string,
-): Promise<void> {
-  const board: BoardState = {
-    turn: 1,
-    currentUid,
-    dice: null,
-    animating: false,
-    pending: null,
-  };
-  await set(ref(db, `${roomPath(roomCode)}/board`), board);
-}
-
-/** 【ホスト】プレイヤーのコイン・スター・位置を書き込む。 */
-export async function writePlayerStats(
-  roomCode: string,
-  uid: string,
-  stats: Pick<Player, "coins" | "stars" | "pos">,
-): Promise<void> {
-  await update(ref(db, `${roomPath(roomCode)}/players/${uid}`), stats);
 }
 
 /** 【ホスト】フェーズを変更する。遷移を起こしてよいのはホストだけ。 */
 export async function setPhase(
   roomCode: string,
-  phase: Phase,
+  phase: string,
 ): Promise<void> {
-  await update(ref(db, `${roomPath(roomCode)}/meta`), { phase });
+  await applyRoomUpdate(roomCode, { "meta/phase": phase });
 }
 
-/**
- * 【ホスト】ミニゲームを開始する。
- * startAt / endAt は **サーバー時刻の絶対値**（CLAUDE.md セクション6）。
- * 各端末はこの絶対時刻を基準に同時に開始する。
- */
-export async function startMinigame(
-  roomCode: string,
-  id: string,
-  startAt: number,
-  endAt: number,
-): Promise<void> {
-  const minigame: MinigameState = {
-    id,
-    startAt,
-    endAt,
-    ranking: null,
-  };
-  await set(ref(db, `${roomPath(roomCode)}/minigame`), minigame);
-}
-
-/** 【ホスト】受け取ったスコアを集計場所に書く。 */
-export async function writeScore(
-  roomCode: string,
-  uid: string,
-  score: number,
-): Promise<void> {
-  await set(ref(db, `${roomPath(roomCode)}/minigame/scores/${uid}`), score);
-}
-
-/** 【ホスト】確定した順位を書く。 */
-export async function writeRanking(
-  roomCode: string,
-  ranking: string[],
-): Promise<void> {
-  await update(ref(db, `${roomPath(roomCode)}/minigame`), { ranking });
-}
-
-/**
- * 【ホスト】ミニゲームが終わったあとの後始末。
- * 最終ターンなら gameEnd、そうでなければ次のターンのボードへ。
- */
-export async function finishTurn(
-  roomCode: string,
-  currentTurn: number,
-  maxTurns: number,
-  firstUid: string,
-): Promise<void> {
-  // 次のターンに前回のスコアが残らないよう消す
+/** 【ホスト】ミニゲームのノードごと消す。 */
+export async function clearMinigame(roomCode: string): Promise<void> {
   await remove(ref(db, `${roomPath(roomCode)}/minigame`));
-
-  if (currentTurn >= maxTurns) {
-    await setPhase(roomCode, "gameEnd");
-    return;
-  }
-  const board: BoardState = {
-    turn: currentTurn + 1,
-    currentUid: firstUid,
-    dice: null,
-    animating: false,
-    pending: null,
-  };
-  await set(ref(db, `${roomPath(roomCode)}/board`), board);
-  await setPhase(roomCode, "board");
 }

@@ -1,8 +1,7 @@
 import { useEffect } from "react";
 import { motion } from "framer-motion";
 import { PLAYER_COLORS } from "../components/PlayerCard";
-import { hasMinigameBonus } from "../logic/board";
-import { computeRewards } from "../logic/reward";
+import { ffaReward } from "../logic/minigame";
 import { findMinigame } from "../minigames/registry";
 import { selectPlayers, useRoom } from "../store/useRoom";
 import { playSound } from "../lib/sound";
@@ -23,12 +22,11 @@ export default function MinigameResult() {
   const ranking = room?.minigame?.ranking ?? [];
   const scores = room?.minigame?.scores;
 
-  const doubled = new Set(
-    players
-      .filter((entry) => hasMinigameBonus(entry.player.pos))
-      .map((entry) => entry.uid),
+  // 実際の増減はホストが済ませているので、ここは同じ式で表示するだけ
+  const rewards: Record<string, number> = Object.fromEntries(
+    ranking.map((uid, index) => [uid, ffaReward(index, false)]),
   );
-  const rewards = computeRewards(ranking, doubled);
+  const doubled = new Set<string>();
 
   // 自分がコインをもらえたときだけ鳴らす
   const myGain = myUid !== null ? (rewards[myUid] ?? 0) : 0;

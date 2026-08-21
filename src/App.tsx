@@ -10,8 +10,8 @@ import Minigame from "./screens/Minigame";
 import MinigameResult from "./screens/MinigameResult";
 import GameEnd from "./screens/GameEnd";
 import Board from "./screens/Board";
-import PhasePlaceholder from "./screens/PhasePlaceholder";
-import { useHost } from "./hooks/useHost";
+import FinalBonus from "./screens/FinalBonus";
+import { useHostEngine } from "./host/hostEngine";
 import { useHostHandover } from "./hooks/useHostHandover";
 import { useWakeLock } from "./hooks/useWakeLock";
 import { initSound, isMuted, setMuted } from "./lib/sound";
@@ -35,7 +35,7 @@ export default function App() {
   const [muted, setMutedState] = useState(isMuted);
 
   // ホスト端末だけがゲームロジックを回す（内部で isHost をガードしている）
-  useHost();
+  useHostEngine();
   // ホストが落ちたら、次の人が引き継ぐ（ホスト以外で動く）
   useHostHandover();
   // ルームに入っている間は画面を消さない
@@ -178,10 +178,16 @@ export default function App() {
     if (room.meta.phase === "gameEnd") {
       return <GameEnd />;
     }
+    if (room.meta.phase === "finalBonus") {
+      return <FinalBonus />;
+    }
+    if (room.meta.phase === "gameSetup") {
+      return <Centered title="ゲームの じゅんび中…" />;
+    }
     if (room.meta.phase === "board") {
       return <Board />;
     }
-    return <PhasePlaceholder phase={room.meta.phase} />;
+    return <Centered title="よみこみ中…" />;
   }
 }
 

@@ -1,178 +1,91 @@
+import type { BoardDef, BoardNode } from "../board/types";
 import type { Player } from "../types";
 
 /**
- * ボード（すごろく）の純関数（CLAUDE.md セクション8）。
- * React にも Firebase にも依存させない。乱数はここでは作らず、
- * ホストが生成した値を引数で受け取る（CLAUDE.md セクション3）。
+ * ボードの純関数（CLAUDE.md セクション8）。
+ * React にも Firebase にも依存しない。乱数はここでは作らず、
+ * ホストが生成した値を引数で受け取る（セクション3）。
  */
-
-export type SquareType =
-  | "plus"
-  | "minus"
-  | "star"
-  | "minigame"
-  | "warp"
-  | "empty";
-
-/** リング状の盤面。全24マス、インデックス0がスタート。 */
-export const BOARD: readonly SquareType[] = [
-  "empty", // 0 スタート
-  "plus",
-  "minus",
-  "minigame",
-  "plus",
-  "empty",
-  "star", // 6
-  "minus",
-  "plus",
-  "warp",
-  "minigame",
-  "empty",
-  "plus", // 12
-  "minus",
-  "minigame",
-  "plus",
-  "empty",
-  "minus",
-  "star", // 18
-  "plus",
-  "warp",
-  "minigame",
-  "empty",
-  "minus",
-];
-
-export const BOARD_SIZE = BOARD.length;
-
-/** plus / minus で増減するコイン枚数。 */
-export const COIN_DELTA = 3;
-/** スター1つの値段。 */
-export const STAR_COST = 20;
 
 export type PlayersState = Record<string, Player>;
 
-/** マスの種類を返す。pos はリング状に丸める。 */
-export function squareAt(pos: number): SquareType {
-  const index = ((pos % BOARD_SIZE) + BOARD_SIZE) % BOARD_SIZE;
-  // BOARD は固定長なので必ず存在するが、noUncheckedIndexedAccess 対策
-  return BOARD[index] ?? "empty";
+/** ノードを引く。無ければ null。 */
+export function nodeAt(board: BoardDef, id: number): BoardNode | null {
+  return board.nodes.find((node) => node.id === id) ?? null;
+}
+
+/** そのノードから進める先。 */
+export function nextOf(board: BoardDef, id: number): number[] {
+  return nodeAt(board, id)?.next ?? [];
+}
+
+/** 分岐（進める先が2つ以上）か。 */
+export function isBranch(board: BoardDef, id: number): boolean {
+  return nextOf(board, id).length >= 2;
 }
 
 /**
- * そのマスに立っているとミニゲーム報酬が2倍になるか。
- * ミニゲーム中は位置が動かないため、専用のフラグを持たずに pos から判定できる。
+ * ボード定義が壊れていないか調べる。
+ * 行き止まり・存在しない接続先があれば理由を返す。問題なければ空配列。
  */
-export function hasMinigameBonus(pos: number): boolean {
-  return squareAt(pos) === "minigame";
+export function validateBoard(board: BoardDef): string[] {
+  const problems: string[] = [];
+  const ids = new Set(board.nodes.map((node) => node.id));
+
+  if (ids.size !== board.nodes.length) problems.push("id が重複している");
+  if (!ids.has(board.startNodeId)) problems.push("startNodeId が存在しない");
+
+  for (const node of board.nodes) {
+    if (node.next.length === 0) problems.push(`${node.id} が行き止まり`);
+    for (const next of node.next) {
+      if (!ids.has(next)) problems.push(`${node.id} → ${next} は存在しない`);
+      if (next === node.id) problems.push(`${node.id} が自分自身を指している`);
+    }
+    if (new Set(node.next).size !== node.next.length) {
+      problems.push(`${node.id} の next が重複している`);
+    }
+    if (node.warpTo !== undefined && !ids.has(node.warpTo)) {
+      problems.push(`${node.id} の warpTo が存在しない`);
+    }
+  }
+  for (const candidate of board.starCandidates) {
+    if (!ids.has(candidate)) problems.push(`スター候補 ${candidate} が存在しない`);
+  }
+  return problems;
 }
 
-/** サイコロの出目だけコマを進める（マス効果は適用しない）。 */
-export function applyDice(
-  players: PlayersState,
-  uid: string,
-  dice: number,
-): PlayersState {
-  const player = players[uid];
-  if (!player) return players;
-  return {
-    ...players,
-    [uid]: { ...player, pos: (player.pos + dice) % BOARD_SIZE },
-  };
+/** 分岐の選択が正しいか。存在しないルートは拒否する。 */
+export function isLegalStep(
+  board: BoardDef,
+  from: number,
+  to: number,
+): boolean {
+  return nextOf(board, from).includes(to);
 }
 
 /**
- * star マスで本人に購入確認を出す必要があるか。
- * コインが足りなければ確認せずに素通りする。
+ * 1マス進む。
+ * 分岐がある場合は choice を使う。choice が不正なら先頭を選ぶ
+ * （タイムアウト時にホストが自動で進めるときの既定動作）。
  */
-export function needsStarChoice(players: PlayersState, uid: string): boolean {
-  const player = players[uid];
-  if (!player) return false;
-  return squareAt(player.pos) === "star" && player.coins >= STAR_COST;
+export function stepFrom(
+  board: BoardDef,
+  from: number,
+  choice?: number,
+): number {
+  const options = nextOf(board, from);
+  const first = options[0];
+  if (first === undefined) return from;
+  if (choice !== undefined && options.includes(choice)) return choice;
+  return first;
 }
 
-/** マス効果の適用に必要な、ロジック外から与えられる判断材料。 */
-export interface SquareContext {
-  /** warp の移動先。ホストが乱数で決める（CLAUDE.md セクション3）。 */
-  warpTarget: number;
-  /** star マスでスターを買うか。本人が選ぶ。 */
-  buyStar: boolean;
+/** コインは0未満にしない。 */
+export function clampCoins(value: number): number {
+  return Math.max(0, Math.round(value));
 }
 
-/** マス効果の結果。演出とログの表示に使う。 */
-export interface SquareResult {
-  type: SquareType;
-  coinDelta: number;
-  starDelta: number;
-  /** warp で移動した先。移動しなければ null。 */
-  movedTo: number | null;
-}
-
-/**
- * 止まったマスの効果を適用する。
- * 乱数（warp の移動先）と本人の選択（star を買うか）は ctx で受け取る。
- */
-export function applySquareEffect(
-  players: PlayersState,
-  uid: string,
-  ctx: SquareContext,
-): { players: PlayersState; result: SquareResult } {
-  const player = players[uid];
-  if (!player) {
-    return {
-      players,
-      result: { type: "empty", coinDelta: 0, starDelta: 0, movedTo: null },
-    };
-  }
-
-  const type = squareAt(player.pos);
-  let coinDelta = 0;
-  let starDelta = 0;
-  let movedTo: number | null = null;
-
-  switch (type) {
-    case "plus":
-      coinDelta = COIN_DELTA;
-      break;
-    case "minus":
-      // 0未満にはしない
-      coinDelta = -Math.min(COIN_DELTA, player.coins);
-      break;
-    case "star":
-      // 本人が「買う」を選び、かつ20枚払えるときだけ購入する
-      if (ctx.buyStar && player.coins >= STAR_COST) {
-        coinDelta = -STAR_COST;
-        starDelta = 1;
-      }
-      break;
-    case "warp":
-      movedTo = ((ctx.warpTarget % BOARD_SIZE) + BOARD_SIZE) % BOARD_SIZE;
-      break;
-    case "minigame":
-    case "empty":
-      // minigame はこの時点では何もしない。
-      // ミニゲームの報酬計算時に hasMinigameBonus() で2倍にする。
-      break;
-  }
-
-  return {
-    players: {
-      ...players,
-      [uid]: {
-        ...player,
-        coins: player.coins + coinDelta,
-        stars: player.stars + starDelta,
-        pos: movedTo ?? player.pos,
-      },
-    },
-    result: { type, coinDelta, starDelta, movedTo },
-  };
-}
-
-/** サイコロを振ったときにコマが通過するマスの並び（アニメーション用）。 */
-export function stepPath(from: number, dice: number): number[] {
-  const path: number[] = [];
-  for (let i = 1; i <= dice; i++) {
-    path.push((from + i) % BOARD_SIZE);
-  }
-  return path;
+/** サイコロの合計を出す。 */
+export function totalOf(values: readonly number[]): number {
+  return values.reduce((sum, value) => sum + value, 0);
 }

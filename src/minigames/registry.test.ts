@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findMinigame, MINIGAMES, pickMinigame } from "./registry";
+import { findMinigame, MINIGAMES, modeOf, pickMinigame } from "./registry";
 
 /**
  * 「registry.ts に足すだけで増やせる」という設計要件を固定するテスト
@@ -80,17 +80,33 @@ describe("pickMinigame", () => {
     expect(pickMinigame(1)).toBe(MINIGAMES[MINIGAMES.length - 1]);
   });
 
+  it("直近2本を除外できる", () => {
+    const recent = [MINIGAMES[0]!.id, MINIGAMES[1]!.id];
+    for (let i = 0; i < 100; i++) {
+      const picked = pickMinigame(i / 100, recent)?.id;
+      expect(recent).not.toContain(picked);
+    }
+  });
+
+  it("2人だと4人専用の形式は選ばれない", () => {
+    for (let i = 0; i < 100; i++) {
+      const picked = pickMinigame(i / 100, [], 2);
+      expect(picked).not.toBeNull();
+      expect(modeOf(picked!)).toBe("ffa");
+    }
+  });
+
   it("excludeId に渡したゲームは選ばれない（2ターン連続で同じにしない）", () => {
     for (const excluded of MINIGAMES) {
       for (let i = 0; i < 100; i++) {
-        expect(pickMinigame(i / 100, excluded.id)?.id).not.toBe(excluded.id);
+        expect(pickMinigame(i / 100, [excluded.id])?.id).not.toBe(excluded.id);
       }
     }
   });
 
   it("除外しても残り全部が選ばれうる", () => {
     const picked = new Set(
-      Array.from({ length: 300 }, (_, i) => pickMinigame(i / 300, "reflex")?.id),
+      Array.from({ length: 300 }, (_, i) => pickMinigame(i / 300, ["reflex"])?.id),
     );
     expect(picked).toEqual(
       new Set(MINIGAMES.filter((g) => g.id !== "reflex").map((g) => g.id)),

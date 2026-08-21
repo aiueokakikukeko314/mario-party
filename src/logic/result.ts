@@ -49,6 +49,34 @@ export function rankPlayers(
   return ranked;
 }
 
+/**
+ * 完全同点（スターもコインも同じ）の1位が複数いる場合に、
+ * ホストが振ったサイコロで決着をつける。
+ * tieBreak は uid → 出目。出目が大きい人が上。
+ */
+export function applyTieBreak(
+  ranked: readonly RankedPlayer[],
+  tieBreak: Record<string, number> | undefined,
+): RankedPlayer[] {
+  if (!tieBreak) return [...ranked];
+  const sorted = [...ranked].sort((a, b) => {
+    if (a.rank !== b.rank) return a.rank - b.rank;
+    const rollA = tieBreak[a.uid] ?? 0;
+    const rollB = tieBreak[b.uid] ?? 0;
+    if (rollA !== rollB) return rollB - rollA;
+    return a.player.order - b.player.order;
+  });
+  // 出目で差がついた分だけ順位を振り直す
+  return sorted.map((entry, index) => {
+    const previous = sorted[index - 1];
+    if (!previous) return { ...entry, rank: 1 };
+    const same =
+      previous.rank === entry.rank &&
+      (tieBreak[previous.uid] ?? 0) === (tieBreak[entry.uid] ?? 0);
+    return { ...entry, rank: same ? index : index + 1 };
+  });
+}
+
 /** 1位の人たち（同点なら複数）。 */
 export function winnersOf(ranked: readonly RankedPlayer[]): RankedPlayer[] {
   return ranked.filter((entry) => entry.rank === 1);

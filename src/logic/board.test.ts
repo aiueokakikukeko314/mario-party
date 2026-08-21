@@ -1,215 +1,100 @@
 import { describe, expect, it } from "vitest";
+import { partyIsland } from "../board/boards/partyIsland";
+import { BOARDS } from "../board/registry";
 import {
-  applyDice,
-  applySquareEffect,
-  BOARD,
-  BOARD_SIZE,
-  COIN_DELTA,
-  hasMinigameBonus,
-  needsStarChoice,
-  squareAt,
-  STAR_COST,
-  stepPath,
-  type PlayersState,
-  type SquareContext,
+  clampCoins,
+  isBranch,
+  isLegalStep,
+  nextOf,
+  nodeAt,
+  stepFrom,
+  totalOf,
+  validateBoard,
 } from "./board";
-import type { Player } from "../types";
+import type { BoardDef } from "../board/types";
 
-function player(overrides: Partial<Player> = {}): Player {
-  return {
-    name: "テスト",
-    colorIdx: 0,
-    order: 0,
-    coins: 0,
-    stars: 0,
-    pos: 0,
-    connected: true,
-    lastSeen: 0,
-    ...overrides,
-  };
-}
-
-/** applySquareEffect に渡す判断材料。既定は「ワープ先0・スターは買わない」。 */
-function ctx(overrides: Partial<SquareContext> = {}): SquareContext {
-  return { warpTarget: 0, buyStar: false, ...overrides };
-}
-
-/** 指定の種類のマスの位置を1つ返す。 */
-function posOf(type: (typeof BOARD)[number]): number {
-  const index = BOARD.indexOf(type);
-  if (index < 0) throw new Error(`${type} のマスが盤面にありません`);
-  return index;
-}
-
-describe("盤面の定義", () => {
-  it("24マスある", () => {
-    expect(BOARD_SIZE).toBe(24);
-  });
-
-  it("必要なマス種別がすべて含まれる", () => {
-    for (const type of ["plus", "minus", "star", "minigame", "warp", "empty"]) {
-      expect(BOARD).toContain(type);
+describe("ボード定義の健全性", () => {
+  it("登録されている全ボードに行き止まり・不正な接続が無い", () => {
+    for (const board of BOARDS) {
+      expect(validateBoard(board)).toEqual([]);
     }
   });
 
-  it("squareAt はリング状に丸める", () => {
-    expect(squareAt(BOARD_SIZE)).toBe(squareAt(0));
-    expect(squareAt(BOARD_SIZE + 5)).toBe(squareAt(5));
-    expect(squareAt(-1)).toBe(squareAt(BOARD_SIZE - 1));
+  it("行き止まりを検出できる", () => {
+    const broken: BoardDef = {
+      id: "x", name: "x", startNodeId: 0, starCandidates: [],
+      nodes: [{ id: 0, x: 0, y: 0, type: "start", next: [] }],
+    };
+    expect(validateBoard(broken)).toContain("0 が行き止まり");
+  });
+
+  it("存在しない接続先を検出できる", () => {
+    const broken: BoardDef = {
+      id: "x", name: "x", startNodeId: 0, starCandidates: [],
+      nodes: [{ id: 0, x: 0, y: 0, type: "start", next: [99] }],
+    };
+    expect(validateBoard(broken)).toContain("0 → 99 は存在しない");
+  });
+
+  it("スター候補は必ず存在するノードを指す", () => {
+    const ids = new Set(partyIsland.nodes.map((n) => n.id));
+    for (const candidate of partyIsland.starCandidates) {
+      expect(ids.has(candidate)).toBe(true);
+    }
+  });
+
+  it("本道をたどると必ずスタートへ戻る（ループしている）", () => {
+    let pos = partyIsland.startNodeId;
+    for (let i = 0; i < 24; i++) pos = stepFrom(partyIsland, pos);
+    expect(pos).toBe(partyIsland.startNodeId);
   });
 });
 
-describe("applyDice", () => {
-  it("出目のぶんだけ進む", () => {
-    const before: PlayersState = { me: player({ pos: 0 }) };
-    expect(applyDice(before, "me", 4)["me"]?.pos).toBe(4);
+describe("分岐", () => {
+  it("4番と16番が分岐点になっている", () => {
+    expect(isBranch(partyIsland, 4)).toBe(true);
+    expect(isBranch(partyIsland, 16)).toBe(true);
   });
 
-  it("1周したら先頭に戻る", () => {
-    const before: PlayersState = { me: player({ pos: BOARD_SIZE - 2 }) };
-    expect(applyDice(before, "me", 5)["me"]?.pos).toBe(3);
+  it("分岐でない場所は1本道", () => {
+    expect(isBranch(partyIsland, 0)).toBe(false);
+    expect(nextOf(partyIsland, 0)).toEqual([1]);
   });
 
-  it("元のオブジェクトを書き換えない", () => {
-    const before: PlayersState = { me: player({ pos: 0 }) };
-    applyDice(before, "me", 3);
-    expect(before["me"]?.pos).toBe(0);
+  it("近道を選ぶと本道を飛ばして合流する", () => {
+    let pos = stepFrom(partyIsland, 4, 24);
+    expect(pos).toBe(24);
+    pos = stepFrom(partyIsland, pos);
+    pos = stepFrom(partyIsland, pos);
+    pos = stepFrom(partyIsland, pos);
+    expect(pos).toBe(12); // 26 の次が本道12へ合流
   });
 
-  it("存在しない uid なら何もしない", () => {
-    const before: PlayersState = { me: player() };
-    expect(applyDice(before, "unknown", 3)).toBe(before);
+  it("不正なルート指定は拒否され、既定の1本目に進む", () => {
+    expect(isLegalStep(partyIsland, 4, 99)).toBe(false);
+    expect(stepFrom(partyIsland, 4, 99)).toBe(5);
+  });
+
+  it("正しいルート指定は許可される", () => {
+    expect(isLegalStep(partyIsland, 4, 24)).toBe(true);
+    expect(isLegalStep(partyIsland, 4, 5)).toBe(true);
   });
 });
 
-describe("applySquareEffect", () => {
-  it("plus は +3 コイン", () => {
-    const state: PlayersState = { me: player({ pos: posOf("plus"), coins: 5 }) };
-    const { players, result } = applySquareEffect(state, "me", ctx());
-    expect(players["me"]?.coins).toBe(5 + COIN_DELTA);
-    expect(result.coinDelta).toBe(COIN_DELTA);
+describe("小さな純関数", () => {
+  it("コインは0未満にならない", () => {
+    expect(clampCoins(-10)).toBe(0);
+    expect(clampCoins(0)).toBe(0);
+    expect(clampCoins(7)).toBe(7);
   });
 
-  it("minus は -3 コイン", () => {
-    const state: PlayersState = {
-      me: player({ pos: posOf("minus"), coins: 10 }),
-    };
-    expect(applySquareEffect(state, "me", ctx()).players["me"]?.coins).toBe(7);
+  it("サイコロの合計", () => {
+    expect(totalOf([3])).toBe(3);
+    expect(totalOf([1, 6, 2])).toBe(9);
+    expect(totalOf([])).toBe(0);
   });
 
-  it("minus でコインは0未満にならない", () => {
-    const state: PlayersState = {
-      me: player({ pos: posOf("minus"), coins: 1 }),
-    };
-    const { players, result } = applySquareEffect(state, "me", ctx());
-    expect(players["me"]?.coins).toBe(0);
-    expect(result.coinDelta).toBe(-1);
-  });
-
-  it("star は「買う」を選ぶとコイン20枚でスター1つ", () => {
-    const state: PlayersState = {
-      me: player({ pos: posOf("star"), coins: 25, stars: 1 }),
-    };
-    const { players } = applySquareEffect(state, "me", ctx({ buyStar: true }));
-    expect(players["me"]?.coins).toBe(25 - STAR_COST);
-    expect(players["me"]?.stars).toBe(2);
-  });
-
-  it("star で「やめる」を選ぶと何も起きない", () => {
-    const state: PlayersState = {
-      me: player({ pos: posOf("star"), coins: 25, stars: 1 }),
-    };
-    const { players } = applySquareEffect(state, "me", ctx({ buyStar: false }));
-    expect(players["me"]?.coins).toBe(25);
-    expect(players["me"]?.stars).toBe(1);
-  });
-
-  it("star は「買う」でもコインが足りなければ購入しない", () => {
-    const state: PlayersState = {
-      me: player({ pos: posOf("star"), coins: 19, stars: 0 }),
-    };
-    const { players } = applySquareEffect(state, "me", ctx({ buyStar: true }));
-    expect(players["me"]?.coins).toBe(19);
-    expect(players["me"]?.stars).toBe(0);
-  });
-
-  it("warp はホストが渡した位置へ移動する", () => {
-    const state: PlayersState = { me: player({ pos: posOf("warp") }) };
-    const { players, result } = applySquareEffect(state, "me", ctx({ warpTarget: 7 }));
-    expect(players["me"]?.pos).toBe(7);
-    expect(result.movedTo).toBe(7);
-  });
-
-  it("warp の移動先もリング状に丸める", () => {
-    const state: PlayersState = { me: player({ pos: posOf("warp") }) };
-    expect(applySquareEffect(state, "me", ctx({ warpTarget: BOARD_SIZE + 2 })).players["me"]?.pos).toBe(2);
-  });
-
-  it("minigame マスはこの時点では増減なし", () => {
-    const state: PlayersState = {
-      me: player({ pos: posOf("minigame"), coins: 5 }),
-    };
-    const { players, result } = applySquareEffect(state, "me", ctx());
-    expect(players["me"]?.coins).toBe(5);
-    expect(result.coinDelta).toBe(0);
-    expect(result.type).toBe("minigame");
-  });
-
-  it("empty は何も起きない", () => {
-    const state: PlayersState = {
-      me: player({ pos: posOf("empty"), coins: 5, stars: 1 }),
-    };
-    const { players } = applySquareEffect(state, "me", ctx());
-    expect(players["me"]?.coins).toBe(5);
-    expect(players["me"]?.stars).toBe(1);
-  });
-
-  it("他のプレイヤーには影響しない", () => {
-    const state: PlayersState = {
-      me: player({ pos: posOf("plus"), coins: 0 }),
-      other: player({ coins: 99 }),
-    };
-    expect(applySquareEffect(state, "me", ctx()).players["other"]?.coins).toBe(99);
-  });
-});
-
-describe("needsStarChoice", () => {
-  it("star マスでコインが足りれば確認が要る", () => {
-    const state: PlayersState = {
-      me: player({ pos: posOf("star"), coins: STAR_COST }),
-    };
-    expect(needsStarChoice(state, "me")).toBe(true);
-  });
-
-  it("star マスでもコインが足りなければ確認しない", () => {
-    const state: PlayersState = {
-      me: player({ pos: posOf("star"), coins: STAR_COST - 1 }),
-    };
-    expect(needsStarChoice(state, "me")).toBe(false);
-  });
-
-  it("star 以外のマスでは確認しない", () => {
-    const state: PlayersState = {
-      me: player({ pos: posOf("plus"), coins: 99 }),
-    };
-    expect(needsStarChoice(state, "me")).toBe(false);
-  });
-});
-
-describe("hasMinigameBonus", () => {
-  it("minigame マスの上ならボーナスあり", () => {
-    expect(hasMinigameBonus(posOf("minigame"))).toBe(true);
-  });
-  it("それ以外はボーナスなし", () => {
-    expect(hasMinigameBonus(posOf("plus"))).toBe(false);
-  });
-});
-
-describe("stepPath", () => {
-  it("通過するマスを順に返す", () => {
-    expect(stepPath(0, 3)).toEqual([1, 2, 3]);
-  });
-  it("周回をまたぐ", () => {
-    expect(stepPath(BOARD_SIZE - 2, 3)).toEqual([BOARD_SIZE - 1, 0, 1]);
+  it("存在しないノードは null", () => {
+    expect(nodeAt(partyIsland, 999)).toBeNull();
   });
 });

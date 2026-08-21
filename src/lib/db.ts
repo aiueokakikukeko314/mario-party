@@ -14,8 +14,13 @@ import { parseRoom } from "./parse";
 import { pickFreeSlot } from "../logic/lobby";
 import { generateRoomCode } from "./roomCode";
 import { serverNow } from "./time";
-import { DEFAULT_MAX_TURNS } from "../constants";
-import type { Player, Room } from "../types";
+import {
+  DEFAULT_BOARD_ID,
+  DEFAULT_MAX_TURNS,
+  DEFAULT_STARTING_COINS,
+} from "../constants";
+import { EMPTY_STATS } from "../logic/bonus";
+import type { GameConfig, Player, Room } from "../types";
 
 /**
  * RTDB への読み書きは必ずこのファイル経由（CLAUDE.md セクション10）。
@@ -48,13 +53,23 @@ function newPlayer(name: string, slot: number): Player {
     name,
     colorIdx: slot as Player["colorIdx"],
     order: slot,
+    // 参加時点では0。開始時にホストが startingCoins を配る
     coins: 0,
     stars: 0,
     pos: 0,
     connected: true,
     lastSeen: serverNow(),
+    stats: { ...EMPTY_STATS },
   };
 }
+
+const DEFAULT_CONFIG: GameConfig = {
+  boardId: DEFAULT_BOARD_ID,
+  maxTurns: DEFAULT_MAX_TURNS,
+  bonusAwardsEnabled: true,
+  itemsEnabled: true,
+  startingCoins: DEFAULT_STARTING_COINS,
+};
 
 export type CreateResult =
   | { ok: true; roomCode: string }
@@ -79,12 +94,13 @@ export async function createRoom(
       return {
         meta: {
           hostId: uid,
+          hostEpoch: 1,
           phase: "lobby",
           // transaction 内では serverTimestamp() の番兵値を使わず、
           // コミット後に本物のサーバー時刻で上書きする（下の update）
           createdAt: serverNow(),
-          maxTurns: DEFAULT_MAX_TURNS,
         },
+        config: { ...DEFAULT_CONFIG },
         players: { [uid]: newPlayer(name, 0) },
       };
     });
@@ -193,12 +209,17 @@ export async function claimHost(
   previousHostId: string,
   uid: string,
 ): Promise<boolean> {
+  // hostId と hostEpoch を1つの transaction で同時に更新する。
+  // epoch が上がることで、旧ホストの engine は自分が古いと気づいて停止する。
   const result = await runTransaction(
-    ref(db, `${roomPath(roomCode)}/meta/hostId`),
+    ref(db, `${roomPath(roomCode)}/meta`),
     (current: unknown) => {
+      if (typeof current !== "object" || current === null) return;
+      const meta = current as Record<string, unknown>;
       // 先に誰かが取っていたら何もしない
-      if (current !== previousHostId) return;
-      return uid;
+      if (meta["hostId"] !== previousHostId) return;
+      const epoch = typeof meta["hostEpoch"] === "number" ? meta["hostEpoch"] : 0;
+      return { ...meta, hostId: uid, hostEpoch: epoch + 1 };
     },
   );
   return result.committed;
@@ -209,5 +230,15 @@ export async function claimHost(
  * 呼び出し側で isHost を確認すること（CLAUDE.md セクション3）。
  */
 export async function startGame(roomCode: string): Promise<void> {
-  await update(ref(db, `${roomPath(roomCode)}/meta`), { phase: "board" });
+  // 実際の初期化（手番順・初期コイン・スター位置）はホストの engine が行う。
+  // ここでは合図として phase を進めるだけ。
+  await update(ref(db, `${roomPath(roomCode)}/meta`), { phase: "gameSetup" });
+}
+
+/** 【ホスト】ロビーで設定を変える。 */
+export async function updateConfig(
+  roomCode: string,
+  patch: Partial<GameConfig>,
+): Promise<void> {
+  await update(ref(db, `${roomPath(roomCode)}/config`), patch);
 }

@@ -1,118 +1,124 @@
 import { useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import Board3D from "../components/Board3D";
+import DecisionPanel from "../components/DecisionPanel";
 import Dice from "../components/Dice";
 import PlayerStatusBar from "../components/PlayerStatusBar";
-import { sendInput } from "../lib/dbGame";
-import { selectPlayers, useRoom } from "../store/useRoom";
-import { STAR_COST } from "../logic/board";
+import { inventoryList } from "../logic/items";
 import { playSound } from "../lib/sound";
+import { selectPlayers, useRoom } from "../store/useRoom";
 
 /**
  * すごろく画面。
- * 手番のプレイヤーだけがサイコロを振れる。振ると inputs/{uid} に書き込むだけで、
- * 出目の決定と状態更新はホストが行う（CLAUDE.md セクション3）。
+ * 進行状態（board.action）に応じて出すものを変えるだけで、
+ * 判定はすべてホストが行う（CLAUDE.md セクション3）。
  */
 export default function Board() {
   const room = useRoom((s) => s.room);
-  const roomCode = useRoom((s) => s.roomCode);
   const myUid = useRoom((s) => s.myUid);
+  const send = useRoom((s) => s.send);
   const players = selectPlayers(room);
 
   const board = room?.board;
+  const config = room?.config;
   const currentUid = board?.currentUid ?? null;
   const current = players.find((entry) => entry.uid === currentUid);
+  const me = players.find((entry) => entry.uid === myUid)?.player;
+  const myTurn = currentUid !== null && currentUid === myUid;
 
-  // 連打で同じ入力を何度も送らないようにする
+  const decision = board?.pendingDecision ?? null;
+  const action = board?.action ?? "waiting";
   const [sent, setSent] = useState(false);
+
+  // 手番や選択が変わったら送信済みフラグを戻す
   useEffect(() => {
     setSent(false);
-  }, [currentUid, board?.turn]);
+  }, [currentUid, decision?.id, action]);
 
-  // 出目が出た瞬間・コインやスターが変わった瞬間に音を鳴らす
-  const me = players.find((entry) => entry.uid === myUid);
-  const dice = board?.dice ?? null;
-  const myCoins = me?.player.coins ?? null;
-  const myStars = me?.player.stars ?? null;
+  // 効果音
+  const dice = board?.diceTotal ?? null;
   const prevRef = useRef<{ coins: number | null; stars: number | null }>({
     coins: null,
     stars: null,
   });
-
   useEffect(() => {
     if (dice !== null) playSound("dice");
   }, [dice]);
-
   useEffect(() => {
     const prev = prevRef.current;
-    prevRef.current = { coins: myCoins, stars: myStars };
-    if (prev.coins === null || myCoins === null) return;
-    if (myStars !== null && prev.stars !== null && myStars > prev.stars) {
+    const coins = me?.coins ?? null;
+    const stars = me?.stars ?? null;
+    prevRef.current = { coins, stars };
+    if (prev.coins === null || coins === null) return;
+    if (stars !== null && prev.stars !== null && stars > prev.stars) {
       playSound("star");
       return;
     }
-    if (myCoins > prev.coins) playSound("coin");
-    else if (myCoins < prev.coins) playSound("lose");
-  }, [myCoins, myStars]);
+    if (coins > prev.coins) playSound("coin");
+    else if (coins < prev.coins) playSound("lose");
+  }, [me?.coins, me?.stars]);
 
-  const myTurn = currentUid !== null && currentUid === myUid;
-  const awaitingStar = board?.pending === "star";
-  const canRoll = myTurn && !awaitingStar && board?.animating === false && !sent;
+  const canRoll = myTurn && action === "diceRoll" && !sent;
+  const branchOptions =
+    decision?.type === "branch"
+      ? ((decision.options as { options?: number[] })?.options ?? [])
+      : undefined;
 
   async function roll(): Promise<void> {
-    if (roomCode === null || myUid === null) return;
+    if (!canRoll) return;
     setSent(true);
-    await sendInput(roomCode, myUid, "roll");
+    await send("roll", decision?.id ?? "dice");
   }
 
-  async function chooseStar(buy: boolean): Promise<void> {
-    if (roomCode === null || myUid === null) return;
-    await sendInput(roomCode, myUid, "starChoice", buy);
+  async function answer(payload: unknown): Promise<void> {
+    if (!decision || sent) return;
+    setSent(true);
+    await send("decision", decision.id, payload);
   }
 
   return (
     <main className="flex h-full flex-col">
       <PlayerStatusBar players={players} currentUid={currentUid} />
 
-      <Board3D players={players} currentUid={currentUid} />
+      <Board3D
+        boardId={config?.boardId ?? "party-island"}
+        players={players}
+        currentUid={currentUid}
+        starNodeId={board?.starNodeId ?? -1}
+        {...(branchOptions ? { branchOptions } : {})}
+      />
 
-      {awaitingStar && (
-        <div className="shrink-0 px-6 pt-2">
-          {myTurn ? (
-            <div className="rounded-xl bg-amber-400/10 p-3 ring-1 ring-amber-400/40">
-              <p className="text-center text-sm text-amber-200">
-                ★のマスに とまりました。コイン {STAR_COST} 枚で スターを買いますか？
-              </p>
-              <div className="mt-2 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => void chooseStar(true)}
-                  className="min-h-14 flex-1 rounded-xl bg-amber-400 text-base font-bold text-amber-950"
-                >
-                  買う
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void chooseStar(false)}
-                  className="min-h-14 flex-1 rounded-xl bg-slate-700 text-base font-bold"
-                >
-                  やめる
-                </button>
-              </div>
-            </div>
-          ) : (
-            <p className="rounded-xl bg-slate-800 py-3 text-center text-sm text-slate-300">
-              {current?.player.name ?? "だれか"} が スターを買うか えらんでいます…
-            </p>
-          )}
+      {board?.lastEvent && (
+        <motion.p
+          key={board.lastEvent.at}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="shrink-0 px-6 text-center text-sm text-slate-300"
+        >
+          {board.lastEvent.text}
+        </motion.p>
+      )}
+
+      {decision && (
+        <div className="shrink-0 px-4 pt-2">
+          <DecisionPanel
+            decision={decision}
+            isMine={decision.uid === myUid}
+            currentName={current?.player.name ?? "だれか"}
+            me={me}
+            onAnswer={(payload) => void answer(payload)}
+          />
         </div>
       )}
 
       <div className="flex shrink-0 items-center gap-4 px-6 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
-        <Dice value={board?.dice ?? null} rolling={board?.animating === true} />
-
-        <div className="flex-1">
+        <Dice value={board?.diceTotal ?? null} rolling={action === "moving"} />
+        <div className="min-w-0 flex-1">
           <p className="text-xs text-slate-400">
-            ターン {board?.turn ?? "-"} / {room?.meta.maxTurns ?? "-"}
+            ターン {board?.turn ?? 1} / {config?.maxTurns ?? 10}
+            {board?.finalRush === true && (
+              <span className="ml-2 font-bold text-rose-300">ラストスパート！</span>
+            )}
           </p>
           {canRoll ? (
             <button
@@ -123,18 +129,26 @@ export default function Board() {
               サイコロを振る
             </button>
           ) : (
-            <p className="mt-1 flex min-h-14 items-center justify-center rounded-xl bg-slate-800 text-sm text-slate-300">
-              {board?.animating === true
-                ? "うごいています…"
-                : awaitingStar
-                  ? "★ をどうするか えらんでいます"
-                  : myTurn
-                    ? "まっています…"
-                    : `${current?.player.name ?? "だれか"} のばん`}
+            <p className="mt-1 min-h-14 content-center rounded-xl bg-slate-800 px-4 text-center text-sm text-slate-300">
+              {action === "moving"
+                ? `のこり ${board?.movesRemaining ?? 0} マス`
+                : myTurn
+                  ? "まっています…"
+                  : `${current?.player.name ?? "だれか"} のばん`}
             </p>
           )}
         </div>
       </div>
+
+      {me && inventoryList(me.inventory).length > 0 && (
+        <div className="flex shrink-0 justify-center gap-2 pb-2">
+          {inventoryList(me.inventory).map(({ slot, item }) => (
+            <span key={slot} className="text-xl" title={item.name}>
+              {item.icon}
+            </span>
+          ))}
+        </div>
+      )}
     </main>
   );
 }

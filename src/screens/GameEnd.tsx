@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { motion } from "framer-motion";
 import { PLAYER_COLORS } from "../components/PlayerCard";
 import { rankPlayers, winnersOf } from "../logic/result";
+import { statsOf } from "../logic/bonus";
 import { playSound } from "../lib/sound";
 import { useRoom } from "../store/useRoom";
 
@@ -95,6 +96,26 @@ export default function GameEnd() {
             );
           })}
         </ul>
+
+        <details className="w-full max-w-sm rounded-xl bg-slate-800/70 p-3 text-xs">
+          <summary className="cursor-pointer text-slate-300">
+            ゲーム中の きろく
+          </summary>
+          <ul className="mt-2 flex flex-col gap-1 text-slate-400">
+            {ranked.map((entry) => {
+              const stats = statsOf(entry.player);
+              return (
+                <li key={entry.uid} className="flex justify-between gap-2">
+                  <span className="truncate">{entry.player.name}</span>
+                  <span className="shrink-0 tabular-nums">
+                    {stats.spacesMoved}マス ・ ミニゲーム{stats.minigameWins}勝 ・
+                    アイテム{stats.itemsUsed}コ
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </details>
 
         <p className="text-xs text-slate-500">
           スターの数 → コインの数 の順で じゅんいを きめています

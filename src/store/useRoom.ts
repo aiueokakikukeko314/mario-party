@@ -8,9 +8,10 @@ import {
   subscribeRoom,
   type JoinFailReason,
 } from "../lib/db";
+import { sendInput } from "../lib/dbGame";
 import { normalizeRoomCode } from "../lib/roomCode";
 import { sortPlayers } from "../logic/lobby";
-import type { Player, Room } from "../types";
+import type { InputType, Player, Room } from "../types";
 
 /**
  * ルームの購読を 1 か所に集約する（CLAUDE.md セクション10）。
@@ -85,7 +86,15 @@ interface RoomStore {
   /** 直前のルームに戻ろうとしている最中か */
   restoring: boolean;
 
+  /** 自分の入力に付ける通し番号。送るたびに増える */
+  inputSeq: number;
+
   setMyUid: (uid: string) => void;
+  /**
+   * 入力を送る。seq を自動で増やすので、二重タップしても
+   * ホスト側で古い方が無視される。
+   */
+  send: (type: InputType, actionId: string, payload?: unknown) => Promise<void>;
   setMyName: (name: string) => void;
   clearError: () => void;
   restore: () => Promise<void>;
@@ -104,6 +113,7 @@ export const useRoom = create<RoomStore>()((set, get) => ({
   busy: false,
   error: null,
   restoring: loadSession() !== null,
+  inputSeq: 0,
 
   setMyUid: (uid) => {
     set({ myUid: uid });
@@ -137,6 +147,18 @@ export const useRoom = create<RoomStore>()((set, get) => ({
   },
   setMyName: (name) => set({ myName: name }),
   clearError: () => set({ error: null }),
+
+  send: async (type, actionId, payload) => {
+    const { roomCode, myUid, inputSeq } = get();
+    if (roomCode === null || myUid === null) return;
+    const seq = inputSeq + 1;
+    set({ inputSeq: seq });
+    try {
+      await sendInput(roomCode, myUid, { seq, actionId, type, payload });
+    } catch {
+      // 送れなくてもホスト側のタイムアウトで進むので握りつぶす
+    }
+  },
 
   create: async () => {
     const { myUid, myName, busy } = get();
