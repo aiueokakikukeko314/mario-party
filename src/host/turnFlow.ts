@@ -88,15 +88,41 @@ export async function useSelfItem(
     ...eventLog(uid, "item", `${item.name} を つかった！`),
   };
 
+  // 相手を選ぶアイテムは、ここでは消費だけして選択待ちへ進む
+  if (item.target === "player") {
+    const others = ctx.ordered
+      .filter((entry) => entry.uid !== uid)
+      .map((entry) => entry.uid);
+    if (others.length === 0) {
+      await applyRoomUpdate(ctx.roomCode, paths);
+      await toDiceRoll(ctx);
+      return;
+    }
+    const decision = makeDecision(
+      uid,
+      "itemTarget",
+      { itemId: item.id, targets: others },
+      TIMEOUT_ITEM_MS,
+      ctx.now,
+    );
+    paths[boardPath("boardFlags/targetItemId")] = item.id;
+    Object.assign(paths, actionPaths("itemChoice", decision));
+    await applyRoomUpdate(ctx.roomCode, paths);
+    return;
+  }
+
   if (item.id === "shield") {
     paths[playerPath(uid, "shielded")] = true;
+  } else if (item.id === "reroll") {
+    // 出た目を見てから振り直せるよう、印だけ付けておく
+    paths[boardPath("boardFlags/rerollReady")] = true;
   } else if (item.diceCount !== undefined || item.diceBonus !== undefined) {
     // 出目に効くアイテムは、振るときに参照できるよう覚えておく
     paths[boardPath("boardFlags/pendingItemId")] = item.id;
   }
 
   await applyRoomUpdate(ctx.roomCode, paths);
-  await toDiceRoll({ ...ctx, room: ctx.room });
+  await toDiceRoll(ctx);
 }
 
 /** サイコロを振る。出目はホストだけが決める。 */
@@ -117,15 +143,53 @@ export async function rollDice(ctx: HostCtx, uid: string): Promise<void> {
   const extraBonus = typeof bonusFlag === "number" ? bonusFlag : 0;
   const total = values.reduce((sum, v) => sum + v, 0) + effect.bonus + extraBonus;
 
-  await applyRoomUpdate(ctx.roomCode, {
-    ...actionPaths("moving", null),
+  const canReroll = board.boardFlags?.["rerollReady"] === true;
+  const paths: Record<string, unknown> = {
     [boardPath("diceValues")]: values,
     [boardPath("diceTotal")]: total,
     [boardPath("movesRemaining")]: total,
     [boardPath("boardFlags/pendingItemId")]: null,
     [boardPath("boardFlags/nextDiceBonus")]: null,
     ...eventLog(uid, "dice", `${total} すすむ！`),
+  };
+
+  if (canReroll) {
+    const decision = makeDecision(
+      uid,
+      "eventChoice",
+      { kind: "reroll", total },
+      TIMEOUT_DICE_MS,
+      ctx.now,
+    );
+    Object.assign(paths, actionPaths("diceRoll", decision));
+  } else {
+    Object.assign(paths, actionPaths("moving", null));
+  }
+  await applyRoomUpdate(ctx.roomCode, paths);
+}
+
+/** ふりなおしを使い切って移動へ進む。 */
+export async function confirmDice(ctx: HostCtx): Promise<void> {
+  await applyRoomUpdate(ctx.roomCode, {
+    ...actionPaths("moving", null),
+    [boardPath("boardFlags/rerollReady")]: null,
   });
+}
+
+/** もう一度ふる。ふりなおしは1回だけ。 */
+export async function reroll(ctx: HostCtx, uid: string): Promise<void> {
+  await applyRoomUpdate(ctx.roomCode, {
+    [boardPath("boardFlags/rerollReady")]: null,
+  });
+  const board = ctx.room.board;
+  if (!board) return;
+  // フラグを落とした状態で振り直す。残したままだと何度でも振り直せてしまう
+  const flags = { ...(board.boardFlags ?? {}) };
+  delete flags["rerollReady"];
+  await rollDice(
+    { ...ctx, room: { ...ctx.room, board: { ...board, boardFlags: flags } } },
+    uid,
+  );
 }
 
 /** コインを直接動かしたいとき用（アイテム効果など）。 */

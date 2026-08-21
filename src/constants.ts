@@ -20,6 +20,8 @@ export const COIN_DELTA = 3;
 export const STAR_COST = 20;
 /** 持てるアイテムの数 */
 export const INVENTORY_SIZE = 3;
+/** コインマグネットで奪える枚数 */
+export const COIN_MAGNET_AMOUNT = 5;
 /** ショップで1回の訪問に買える数 */
 export const SHOP_BUY_LIMIT = 1;
 /** ショップに並ぶ商品数 */

@@ -10,7 +10,9 @@ import { advanceOneStep } from "./movement";
 import { applyLanding } from "./landing";
 import {
   resolveBranch,
+  resolveDiceChoice,
   resolveItemChoice,
+  resolveItemTarget,
   resolveShop,
   resolveStar,
 } from "./decisions";
@@ -235,12 +237,25 @@ async function resolveDecision(
     case "itemChoice":
       await resolveItemChoice(ctx, uid, payload);
       return;
-    default:
-      // サイコロ待ちの時間切れは自動でふる
+    case "itemTarget":
+      await resolveItemTarget(ctx, uid, payload);
+      return;
+    default: {
+      // eventChoice は「サイコロ待ち」と「ふりなおし確認」の2種類がある
+      const options = ctx.room.board?.pendingDecision?.options;
+      const kind =
+        typeof options === "object" && options !== null
+          ? (options as Record<string, unknown>)["kind"]
+          : null;
+      if (kind === "reroll") {
+        await resolveDiceChoice(ctx, uid, payload);
+        return;
+      }
       if (ctx.room.board?.action === "diceRoll") {
         await rollDice(ctx, uid);
       }
       return;
+    }
   }
 }
 
@@ -253,6 +268,8 @@ function defaultPayload(type: string): unknown {
       return { leave: true };
     case "itemChoice":
       return { skip: true };
+    case "itemTarget":
+      return {};
     case "branch":
       return {};
     default:

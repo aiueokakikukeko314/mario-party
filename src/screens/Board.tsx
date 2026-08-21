@@ -13,6 +13,11 @@ import { selectPlayers, useRoom } from "../store/useRoom";
  * 進行状態（board.action）に応じて出すものを変えるだけで、
  * 判定はすべてホストが行う（CLAUDE.md セクション3）。
  */
+function showPanel(decision: { type: string; options: unknown }): boolean {
+  if (decision.type !== "eventChoice") return true;
+  return (decision.options as { kind?: string })?.kind === "reroll";
+}
+
 export default function Board() {
   const room = useRoom((s) => s.room);
   const myUid = useRoom((s) => s.myUid);
@@ -58,7 +63,11 @@ export default function Board() {
     else if (coins < prev.coins) playSound("lose");
   }, [me?.coins, me?.stars]);
 
-  const canRoll = myTurn && action === "diceRoll" && !sent;
+  // eventChoice は「サイコロ待ち」と「ふりなおし確認」を兼ねている
+  const isRerollPrompt =
+    decision?.type === "eventChoice" &&
+    (decision.options as { kind?: string })?.kind === "reroll";
+  const canRoll = myTurn && action === "diceRoll" && !isRerollPrompt && !sent;
   const branchOptions =
     decision?.type === "branch"
       ? ((decision.options as { options?: number[] })?.options ?? [])
@@ -99,14 +108,15 @@ export default function Board() {
         </motion.p>
       )}
 
-      {/* サイコロ待ちは下のバーに出るので、パネルは出さない */}
-      {decision && decision.type !== "eventChoice" && (
+      {/* ただのサイコロ待ちは下のバーに出るので、パネルは出さない */}
+      {decision && showPanel(decision) && (
         <div className="shrink-0 px-4 pt-2">
           <DecisionPanel
             decision={decision}
             isMine={decision.uid === myUid}
             currentName={current?.player.name ?? "だれか"}
             me={me}
+            others={players.filter((entry) => entry.uid !== decision.uid)}
             onAnswer={(payload) => void answer(payload)}
           />
         </div>

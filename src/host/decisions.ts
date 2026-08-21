@@ -4,7 +4,7 @@ import { buyBlockReason } from "../logic/shop";
 import { findItem } from "../board/items/registry";
 import { applyStarPurchase, canBuyStar, pickNextStarNode } from "../logic/star";
 import { applyRoomUpdate } from "../lib/dbGame";
-import { STAR_COST } from "../constants";
+import { COIN_MAGNET_AMOUNT, STAR_COST } from "../constants";
 import {
   actionPaths,
   boardPath,
@@ -17,7 +17,7 @@ import {
   type HostCtx,
 } from "./shared";
 import { moveTo, resumeMoving } from "./movement";
-import { useSelfItem, toDiceRoll } from "./turnFlow";
+import { confirmDice, reroll, useSelfItem, toDiceRoll } from "./turnFlow";
 import type { SlotKey } from "../logic/items";
 
 /** 選択待ちへの応答を処理する。payload は検証してから使う。 */
@@ -26,6 +26,19 @@ function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null
     ? (value as Record<string, unknown>)
     : {};
+}
+
+/** サイコロの目を見てからの「ふりなおす / このままいく」。 */
+export async function resolveDiceChoice(
+  ctx: HostCtx,
+  uid: string,
+  payload: unknown,
+): Promise<void> {
+  if (asRecord(payload)["reroll"] === true) {
+    await reroll(ctx, uid);
+    return;
+  }
+  await confirmDice(ctx);
 }
 
 /** 分岐の選択。不正なら既定の1本目へ進める。 */
@@ -122,6 +135,71 @@ export async function resolveShop(
     ...eventLog(uid, "shop", "ショップを 出た"),
     ...actionPaths(board.movesRemaining > 0 ? "moving" : "landingEvent", null),
   });
+}
+
+/**
+ * 相手を選ぶアイテムの効果を適用する。
+ * 時間切れなら先頭の相手を既定として使う（アイテムを無駄にしない）。
+ */
+export async function resolveItemTarget(
+  ctx: HostCtx,
+  uid: string,
+  payload: unknown,
+): Promise<void> {
+  const board = ctx.room.board;
+  const me = playerOf(ctx, uid);
+  if (!board || !me) {
+    await toDiceRoll(ctx);
+    return;
+  }
+
+  const itemId = board.boardFlags?.["targetItemId"];
+  const others = ctx.ordered.filter((entry) => entry.uid !== uid);
+  const requested = asRecord(payload)["target"];
+  const target =
+    others.find((entry) => entry.uid === requested) ?? others[0];
+
+  const paths: Record<string, unknown> = {
+    [boardPath("boardFlags/targetItemId")]: null,
+  };
+
+  if (target && typeof itemId === "string") {
+    switch (itemId) {
+      case "warp-ticket":
+        paths[playerPath(uid, "pos")] = target.player.pos;
+        Object.assign(
+          paths,
+          eventLog(uid, "item", `${target.player.name} のところへ ワープ！`),
+        );
+        break;
+      case "swap-ticket":
+        paths[playerPath(uid, "pos")] = target.player.pos;
+        paths[playerPath(target.uid, "pos")] = me.pos;
+        Object.assign(
+          paths,
+          eventLog(uid, "item", `${target.player.name} と 場所を いれかえた！`),
+        );
+        break;
+      case "coin-magnet": {
+        const amount = Math.min(COIN_MAGNET_AMOUNT, target.player.coins);
+        const taken = coinDelta(target.player, target.uid, -amount);
+        const gained = coinDelta(me, uid, amount);
+        Object.assign(paths, taken.paths, gained.paths);
+        Object.assign(
+          paths,
+          eventLog(uid, "item", `${target.player.name} から ${amount} コイン！`, {
+            coinDelta: amount,
+          }),
+        );
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  await applyRoomUpdate(ctx.roomCode, paths);
+  await toDiceRoll(ctx);
 }
 
 /** アイテム選択の返事。使わない場合はそのままサイコロへ。 */

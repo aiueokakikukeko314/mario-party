@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { findItem } from "../board/items/registry";
 import { buyBlockReason, stockDefs } from "../logic/shop";
 import { inventoryList } from "../logic/items";
+import { PLAYER_COLORS } from "./PlayerCard";
 import { STAR_COST } from "../constants";
 import type { PendingDecision, Player } from "../types";
 
@@ -15,6 +16,8 @@ interface Props {
   isMine: boolean;
   currentName: string;
   me: Player | undefined;
+  /** 相手を選ぶアイテム用 */
+  others: { uid: string; player: Player }[];
   onAnswer: (payload: unknown) => void;
 }
 
@@ -28,6 +31,7 @@ export default function DecisionPanel({
   isMine,
   currentName,
   me,
+  others,
   onAnswer,
 }: Props) {
   if (!isMine) {
@@ -175,6 +179,58 @@ export default function DecisionPanel({
       );
     }
 
+    case "itemTarget": {
+      const itemId = record(decision.options)["itemId"];
+      const item = findItem(typeof itemId === "string" ? itemId : null);
+      return (
+        <Panel title={`${item?.name ?? "アイテム"} を だれに つかう？`}>
+          <div className="flex flex-col gap-2">
+            {others.map(({ uid, player }) => (
+              <button
+                key={uid}
+                type="button"
+                onClick={() => onAnswer({ target: uid })}
+                className="flex min-h-14 items-center gap-3 rounded-xl bg-slate-700 px-3 text-left"
+              >
+                <span
+                  className={`size-4 shrink-0 rounded-full ${PLAYER_COLORS[player.colorIdx].dot}`}
+                />
+                <span className="flex-1 truncate text-base">{player.name}</span>
+                <span className="shrink-0 text-xs text-slate-400">
+                  ★{player.stars} ・ {player.coins}
+                </span>
+              </button>
+            ))}
+          </div>
+        </Panel>
+      );
+    }
+
+    case "eventChoice": {
+      if (record(decision.options)["kind"] !== "reroll") return null;
+      const total = record(decision.options)["total"];
+      return (
+        <Panel title={`${String(total)} が出ました。ふりなおす？`}>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => onAnswer({ reroll: false })}
+              className="min-h-14 flex-1 rounded-xl bg-sky-500 text-base font-bold text-white"
+            >
+              このまま すすむ
+            </button>
+            <button
+              type="button"
+              onClick={() => onAnswer({ reroll: true })}
+              className="min-h-14 flex-1 rounded-xl bg-amber-400 text-base font-bold text-amber-950"
+            >
+              ふりなおす
+            </button>
+          </div>
+        </Panel>
+      );
+    }
+
     default:
       return null;
   }
@@ -207,6 +263,7 @@ function labelOf(type: PendingDecision["type"]): string {
     case "starPurchase": return "スター";
     case "shop": return "ショップ";
     case "itemChoice": return "アイテム";
+    case "itemTarget": return "つかう相手";
     default: return "つぎの こうどう";
   }
 }
