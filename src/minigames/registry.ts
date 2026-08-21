@@ -1,4 +1,6 @@
+import reflex from "./reflex";
 import tapBattle from "./tap-battle";
+import timingStop from "./timing-stop";
 import type { MinigameDef } from "./types";
 
 /**
@@ -6,7 +8,11 @@ import type { MinigameDef } from "./types";
  * 新しいミニゲームは src/minigames/{id}/index.tsx を作り、
  * **この配列に足すだけ**で動くこと。他のファイルは変更しない。
  */
-export const MINIGAMES: readonly MinigameDef[] = [tapBattle];
+export const MINIGAMES: readonly MinigameDef[] = [
+  tapBattle,
+  timingStop,
+  reflex,
+];
 
 /** ID から定義を引く。未登録なら null。 */
 export function findMinigame(id: string | null | undefined): MinigameDef | null {
