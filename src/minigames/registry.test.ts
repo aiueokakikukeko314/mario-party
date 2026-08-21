@@ -7,7 +7,7 @@ import { findMinigame, MINIGAMES, pickMinigame } from "./registry";
  */
 
 describe("MINIGAMES", () => {
-  it("6本が登録されている", () => {
+  it("11本が登録されている", () => {
     expect(MINIGAMES.map((game) => game.id)).toEqual([
       "tap-battle",
       "timing-stop",
@@ -15,7 +15,19 @@ describe("MINIGAMES", () => {
       "whack-mole",
       "cup-shuffle",
       "memory-touch",
+      "ice-stop",
+      "just-stop",
+      "dodge",
+      "odd-one",
+      "balloon",
     ]);
+  });
+
+  it("1本あたりの長さが極端でない（5〜20秒）", () => {
+    for (const game of MINIGAMES) {
+      expect(game.durationMs).toBeGreaterThanOrEqual(5000);
+      expect(game.durationMs).toBeLessThanOrEqual(20000);
+    }
   });
 
   it("ID が重複していない", () => {

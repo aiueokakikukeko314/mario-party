@@ -1,5 +1,10 @@
+import balloon from "./balloon";
 import cupShuffle from "./cup-shuffle";
+import dodge from "./dodge";
+import iceStop from "./ice-stop";
+import justStop from "./just-stop";
 import memoryTouch from "./memory-touch";
+import oddOne from "./odd-one";
 import reflex from "./reflex";
 import tapBattle from "./tap-battle";
 import timingStop from "./timing-stop";
@@ -18,6 +23,11 @@ export const MINIGAMES: readonly MinigameDef[] = [
   whackMole,
   cupShuffle,
   memoryTouch,
+  iceStop,
+  justStop,
+  dodge,
+  oddOne,
+  balloon,
 ];
 
 /** ID から定義を引く。未登録なら null。 */
