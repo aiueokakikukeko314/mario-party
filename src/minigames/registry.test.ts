@@ -7,11 +7,14 @@ import { findMinigame, MINIGAMES, pickMinigame } from "./registry";
  */
 
 describe("MINIGAMES", () => {
-  it("3本が登録されている", () => {
+  it("6本が登録されている", () => {
     expect(MINIGAMES.map((game) => game.id)).toEqual([
       "tap-battle",
       "timing-stop",
       "reflex",
+      "whack-mole",
+      "cup-shuffle",
+      "memory-touch",
     ]);
   });
 
@@ -63,5 +66,22 @@ describe("pickMinigame", () => {
 
   it("1.0 が来ても範囲外にならない", () => {
     expect(pickMinigame(1)).toBe(MINIGAMES[MINIGAMES.length - 1]);
+  });
+
+  it("excludeId に渡したゲームは選ばれない（2ターン連続で同じにしない）", () => {
+    for (const excluded of MINIGAMES) {
+      for (let i = 0; i < 100; i++) {
+        expect(pickMinigame(i / 100, excluded.id)?.id).not.toBe(excluded.id);
+      }
+    }
+  });
+
+  it("除外しても残り全部が選ばれうる", () => {
+    const picked = new Set(
+      Array.from({ length: 300 }, (_, i) => pickMinigame(i / 300, "reflex")?.id),
+    );
+    expect(picked).toEqual(
+      new Set(MINIGAMES.filter((g) => g.id !== "reflex").map((g) => g.id)),
+    );
   });
 });

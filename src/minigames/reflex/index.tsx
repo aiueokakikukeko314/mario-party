@@ -9,7 +9,7 @@ import type { MinigameDef, MinigameProps } from "../types";
 const ROUNDS = 3;
 /** 変色までの待ち時間の範囲(ms) */
 const WAIT_MIN_MS = 1000;
-const WAIT_MAX_MS = 4000;
+const WAIT_MAX_MS = 3000;
 /** フライング1回ごとのペナルティ(ms) */
 const FLYING_PENALTY_MS = 2000;
 /** 挑戦できなかったラウンドの扱い(ms)。有利にならないよう大きめにする */
@@ -134,7 +134,7 @@ const def: MinigameDef = {
   title: "はんしゃしんけい",
   description:
     "画面が みどりに かわったら すぐタップ！ はやくタップする前に おしたら +2000ms のペナルティ。3かいの へいきんで きまる。",
-  durationMs: 18000,
+  durationMs: 13000,
   higherIsBetter: false,
   Component: Reflex,
 };

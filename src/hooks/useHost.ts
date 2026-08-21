@@ -42,6 +42,8 @@ export function useHost(): void {
   const recoveredRef = useRef(false);
   // star の返事待ちの保険タイマー
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 直前に出したミニゲーム。2ターン続けて同じものを出さないために覚えておく
+  const lastGameRef = useRef<string | null>(null);
   // タイマー発火時に最新の room を見るための箱
   const roomRef = useRef<Room | null>(room);
   roomRef.current = room;
@@ -97,8 +99,9 @@ export function useHost(): void {
     // --- ミニゲーム: 選出と同時開始の予約 ---
     if (room.meta.phase === "minigameIntro") {
       if (!room.minigame?.id) {
-        const game = pickMinigame(Math.random());
+        const game = pickMinigame(Math.random(), lastGameRef.current);
         if (!game) return;
+        lastGameRef.current = game.id;
         const startAt = serverNow() + INTRO_MS;
         run(
           startMinigame(roomCode, game.id, startAt, startAt + game.durationMs),

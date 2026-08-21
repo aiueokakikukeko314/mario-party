@@ -1,6 +1,9 @@
+import cupShuffle from "./cup-shuffle";
+import memoryTouch from "./memory-touch";
 import reflex from "./reflex";
 import tapBattle from "./tap-battle";
 import timingStop from "./timing-stop";
+import whackMole from "./whack-mole";
 import type { MinigameDef } from "./types";
 
 /**
@@ -12,6 +15,9 @@ export const MINIGAMES: readonly MinigameDef[] = [
   tapBattle,
   timingStop,
   reflex,
+  whackMole,
+  cupShuffle,
+  memoryTouch,
 ];
 
 /** ID から定義を引く。未登録なら null。 */
@@ -24,12 +30,18 @@ export function findMinigame(id: string | null | undefined): MinigameDef | null 
  * ミニゲームを1本選ぶ。
  * 乱数はホストが生成するので、0以上1未満の値を引数で受け取る
  * （CLAUDE.md セクション3）。
+ *
+ * `excludeId` に直前のゲームを渡すと、それを除いて選ぶ。
+ * 同じゲームが2ターン続けて出るのを防ぐため。
  */
-export function pickMinigame(random: number): MinigameDef | null {
+export function pickMinigame(
+  random: number,
+  excludeId?: string | null,
+): MinigameDef | null {
   if (MINIGAMES.length === 0) return null;
-  const index = Math.min(
-    MINIGAMES.length - 1,
-    Math.floor(random * MINIGAMES.length),
-  );
-  return MINIGAMES[index] ?? null;
+  const filtered = MINIGAMES.filter((game) => game.id !== excludeId);
+  // 除外すると空になる場合（登録が1本だけ）は全体から選ぶ
+  const pool = filtered.length > 0 ? filtered : MINIGAMES;
+  const index = Math.min(pool.length - 1, Math.floor(random * pool.length));
+  return pool[index] ?? null;
 }
