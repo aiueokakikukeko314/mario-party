@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Board3D from "../components/Board3D";
 import Dice from "../components/Dice";
 import PlayerStatusBar from "../components/PlayerStatusBar";
 import { sendInput } from "../lib/dbGame";
 import { selectPlayers, useRoom } from "../store/useRoom";
 import { STAR_COST } from "../logic/board";
+import { playSound } from "../lib/sound";
 
 /**
  * すごろく画面。
@@ -26,6 +27,32 @@ export default function Board() {
   useEffect(() => {
     setSent(false);
   }, [currentUid, board?.turn]);
+
+  // 出目が出た瞬間・コインやスターが変わった瞬間に音を鳴らす
+  const me = players.find((entry) => entry.uid === myUid);
+  const dice = board?.dice ?? null;
+  const myCoins = me?.player.coins ?? null;
+  const myStars = me?.player.stars ?? null;
+  const prevRef = useRef<{ coins: number | null; stars: number | null }>({
+    coins: null,
+    stars: null,
+  });
+
+  useEffect(() => {
+    if (dice !== null) playSound("dice");
+  }, [dice]);
+
+  useEffect(() => {
+    const prev = prevRef.current;
+    prevRef.current = { coins: myCoins, stars: myStars };
+    if (prev.coins === null || myCoins === null) return;
+    if (myStars !== null && prev.stars !== null && myStars > prev.stars) {
+      playSound("star");
+      return;
+    }
+    if (myCoins > prev.coins) playSound("coin");
+    else if (myCoins < prev.coins) playSound("lose");
+  }, [myCoins, myStars]);
 
   const myTurn = currentUid !== null && currentUid === myUid;
   const awaitingStar = board?.pending === "star";

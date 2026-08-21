@@ -14,12 +14,14 @@
   "dependencies": {
     "firebase": "^12.18.0",
     "framer-motion": "^13.1.1",
+    "howler": "^2.2.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "@types/howler": "^2.2.13",
     "@types/node": "^26.2.0",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
@@ -27,6 +29,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
+    "vite-plugin-pwa": "^1.3.0",
     "vitest": "^4.1.11"
   }
 }

@@ -1,9 +1,11 @@
+import { useEffect } from "react";
 import { motion } from "framer-motion";
 import { PLAYER_COLORS } from "../components/PlayerCard";
 import { hasMinigameBonus } from "../logic/board";
 import { computeRewards } from "../logic/reward";
 import { findMinigame } from "../minigames/registry";
 import { selectPlayers, useRoom } from "../store/useRoom";
+import { playSound } from "../lib/sound";
 
 const MEDALS = ["🥇", "🥈", "🥉", ""];
 
@@ -27,6 +29,12 @@ export default function MinigameResult() {
       .map((entry) => entry.uid),
   );
   const rewards = computeRewards(ranking, doubled);
+
+  // 自分がコインをもらえたときだけ鳴らす
+  const myGain = myUid !== null ? (rewards[myUid] ?? 0) : 0;
+  useEffect(() => {
+    if (myGain > 0) playSound("coin");
+  }, [myGain]);
 
   return (
     <main className="flex h-full flex-col items-center justify-center gap-6 p-6">

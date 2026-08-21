@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { useServerNow } from "../hooks/useServerTime";
 import { findMinigame } from "../minigames/registry";
 import { sendInput } from "../lib/dbGame";
+import { playSound } from "../lib/sound";
 import { useRoom } from "../store/useRoom";
 
 /**
@@ -35,6 +36,20 @@ export default function Minigame() {
 
   const finished = endAt !== null && now >= endAt;
 
+  // カウントダウンの1秒ごとに「ピッ」、開始で「ポーン」
+  const countdown =
+    startAt !== null && now < startAt ? Math.ceil((startAt - now) / 1000) : 0;
+  const startedRef = useRef(false);
+  useEffect(() => {
+    if (countdown > 0) playSound("tick");
+  }, [countdown]);
+  useEffect(() => {
+    if (countdown !== 0 || startAt === null || now < startAt) return;
+    if (startedRef.current) return;
+    startedRef.current = true;
+    playSound("start");
+  }, [countdown, startAt, now]);
+
   // 終了時刻を過ぎたら最終スコアを1回だけ送る。
   // minigame ノードはホストしか書けないので inputs 経由で渡す（セクション9）
   useEffect(() => {
@@ -51,7 +66,7 @@ export default function Minigame() {
 
   // --- 開始前: ルール説明とカウントダウン ---
   if (now < startAt) {
-    const remain = Math.ceil((startAt - now) / 1000);
+    const remain = countdown;
     return (
       <main className="flex h-full flex-col items-center justify-center gap-6 p-6">
         <h1 className="text-3xl font-bold">{game.title}</h1>
