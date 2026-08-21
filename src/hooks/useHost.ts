@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { sortPlayers } from "../logic/lobby";
 import { pickMinigame } from "../minigames/registry";
-import { finishTurn, initBoard, setPhase, updateBoard } from "../lib/dbGame";
+import {
+  finishTurn,
+  initBoard,
+  setPhase,
+  startMinigame,
+  updateBoard,
+} from "../lib/dbGame";
 import { collectScores } from "../lib/hostMinigame";
 import { handleRoll, handleStarChoice } from "../lib/hostTurn";
 import {

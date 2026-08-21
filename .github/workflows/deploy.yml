@@ -37,6 +37,9 @@ jobs:
           FIREBASE_CONFIG: ${{ secrets.FIREBASE_CONFIG }}
         run: node scripts/write-env.mjs
 
+      - name: テスト
+        run: npm test
+
       - name: ビルド（型チェック込み）
         env:
           VITE_BASE: /${{ github.event.repository.name }}/

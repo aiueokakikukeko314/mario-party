@@ -66,7 +66,7 @@ npm run dev -- --host
 |---|---|
 | `npm run dev` | 開発サーバー |
 | `npm run build` | 型チェック + 本番ビルド |
-| `npm run typecheck` | `tsc --noEmit` のみ |
+| `npm run typecheck` | 型チェックのみ |
 | `npm run preview` | ビルド結果の確認 |
 
 ## 動作確認
@@ -150,6 +150,18 @@ npm test          # src/logic の純関数のユニットテスト（Vitest）
 npm run typecheck # tsc --noEmit
 npm run build     # 型チェック + 本番ビルド
 ```
+
+## 型チェックについての注意
+
+`tsconfig.json` はプロジェクト参照（`files: []` + `references`）なので、
+**素の `npx tsc --noEmit` は何もチェックしない**（ルートの0ファイルだけを見る）。
+必ず `npm run typecheck` を使うこと。中身は各プロジェクトを個別に指定している。
+
+```bash
+tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json
+```
+
+これに気づかず、import 漏れが本番まで通ってしまったことがある。
 
 ## ディレクトリ構成
 
